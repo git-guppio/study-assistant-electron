@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Layout Generale */
+.pdf-viewer-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.pdf-content-area {
+  flex: 1;
+  overflow: auto;
+  background-color: #525659;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px;
+}
+
+/* Contenitore Pagina */
+.pdf-page-container {
+  position: relative;
+  background-color: white;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  margin-bottom: 2rem;
+}
+
+canvas.pdf-page-canvas {
+  display: block;
+}
+
+/* --- Text Layer --- */
+.textLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 1; /* Gli span interni sono trasparenti, ma il layer deve essere visibile */
+  line-height: 1.0;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+/* Gli span vengono generati dinamicamente da PDF.js */
+.textLayer span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  /* La trasformazione deve partire dall'angolo in alto a sinistra */
+  transform-origin: 0% 0%;
+}
+
+/* Correzione della selezione visiva */
+.textLayer ::selection {
+  background: rgba(0, 100, 255, 0.25);
+}
+
+.textLayer .highlight {
+  background-color: rgba(255, 255, 0, 0.4);
+}
