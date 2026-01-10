@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configurazione Worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Configurazione Worker - bundled localmente per supporto offline
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  '/pdf.worker.min.js',
+  import.meta.url
+).href;
 
 function PDFViewer({ filePath, onTextSelection }) {
   const [pdfDoc, setPdfDoc] = useState(null);
@@ -76,7 +79,7 @@ function PDFViewer({ filePath, onTextSelection }) {
           // Impostiamo le dimensioni esatte del viewport
           textLayerDiv.style.width = `${viewport.width}px`;
           textLayerDiv.style.height = `${viewport.height}px`;
-          
+
           // PDF.js usa questa variabile per posizionare gli span del testo
           textLayerDiv.style.setProperty('--scale-factor', scale);
 
@@ -99,11 +102,11 @@ function PDFViewer({ filePath, onTextSelection }) {
   const handleMouseUp = (e) => {
     const selection = window.getSelection();
     const text = selection.toString().trim();
-    
+
     if (text) {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      
+
       setContextMenu({
         x: e.clientX,
         y: e.clientY,
@@ -121,13 +124,13 @@ function PDFViewer({ filePath, onTextSelection }) {
       {/* Toolbar */}
       <div className="bg-white border-b border-gray-300 p-2 flex items-center justify-between shadow-sm z-10">
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             disabled={currentPage === 1}
             className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-30"
           >←</button>
           <span className="text-sm font-medium">Pagina {currentPage} / {numPages}</span>
-          <button 
+          <button
             onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
             disabled={currentPage === numPages}
             className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-30"
@@ -151,11 +154,11 @@ function PDFViewer({ filePath, onTextSelection }) {
 
       {/* Menu Contestuale */}
       {contextMenu && (
-        <div 
+        <div
           className="fixed bg-white shadow-2xl border border-gray-200 rounded-md py-1 z-50 min-w-[160px]"
           style={{ top: contextMenu.y + 10, left: contextMenu.x }}
         >
-          <button 
+          <button
             className="w-full px-4 py-2 text-left text-sm hover:bg-blue-50"
             onClick={() => {
               onTextSelection(contextMenu.data);
