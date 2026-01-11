@@ -2,7 +2,7 @@
   "name": "study-assistant",
   "version": "1.0.0",
   "description": "Study Assistant - App per lo studio integrata con Calibre",
-  "main": "electron/main.js",
+  "main": "main-process/main.js",
   "scripts": {
     "start": "concurrently \"npm run dev\" \"npm run electron\"",
     "dev": "vite",
@@ -23,27 +23,29 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
+    "@tiptap/extension-highlight": "^2.1.13",
+    "@tiptap/extension-image": "^2.1.13",
+    "@tiptap/extension-link": "^2.1.13",
+    "@tiptap/react": "^2.1.13",
+    "@tiptap/starter-kit": "^2.1.13",
+    "electron-store": "^8.1.0",
     "pdfjs-dist": "^3.11.174",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "reactflow": "^11.10.4",
-    "@tiptap/react": "^2.1.13",
-    "@tiptap/starter-kit": "^2.1.13",
-    "@tiptap/extension-image": "^2.1.13",
-    "@tiptap/extension-link": "^2.1.13",
-    "@tiptap/extension-highlight": "^2.1.13",
-    "electron-store": "^8.1.0"
+    "sql.js": "^1.13.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
     "electron": "^28.1.0",
     "electron-builder": "^24.9.1",
-    "vite": "^5.0.8",
-    "concurrently": "^8.2.2",
-    "wait-on": "^7.2.0",
+    "electron-rebuild": "^3.2.9",
+    "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
-    "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.32"
+    "vite": "^5.0.8",
+    "wait-on": "^7.2.0"
   },
   "build": {
     "appId": "com.studyassistant.app",
@@ -52,7 +54,7 @@
       "output": "dist"
     },
     "files": [
-      "electron/**/*",
+      "main-process/**/*",
       "dist/**/*"
     ],
     "mac": {
@@ -64,6 +66,5 @@
     "linux": {
       "target": "AppImage"
     }
-  },
-  "type": "commonjs"
+  }
 }

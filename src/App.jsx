@@ -25,9 +25,17 @@ function App() {
         setPdfPath(info.filePath);
 
         // Inizializza database
-        if (info.filePath) {
+        if (info.filePath && info.bookId) {
           const pdfDir = await window.electronAPI.getPdfDirectory(info.filePath);
-          await initDatabase(pdfDir, info.bookId);
+          if (pdfDir) {
+            await initDatabase(pdfDir, info.bookId);
+            setDbReady(true);
+          }
+        } else {
+          // Fallback: usa la directory userData per il database
+          const appDataPath = await window.electronAPI.getAppDataPath();
+          const fallbackBookId = info.bookId || 'default';
+          await initDatabase(appDataPath, fallbackBookId);
           setDbReady(true);
         }
 

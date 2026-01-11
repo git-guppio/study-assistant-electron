@@ -1,150 +1,117 @@
-// Database manager usando SQLite
-// Nota: In Electron, better-sqlite3 deve essere usato nel main process
-// Per ora usiamo localStorage come mock, poi integreremo SQLite via IPC
+// Database manager usando SQLite via IPC
+// Il database SQLite viene gestito nel main process (electron/database.js)
+// Questo modulo espone un'interfaccia async che comunica via IPC
 
 class DatabaseManager {
   constructor() {
-    this.dbPath = null;
+    this.initialized = false;
     this.bookId = null;
   }
 
   async init(pdfDirectory, bookId) {
-    this.dbPath = `${pdfDirectory}/book_notes_${bookId}.db`;
     this.bookId = bookId;
 
-    console.log('📦 Database path:', this.dbPath);
-
-    // Per ora usiamo localStorage come storage temporaneo
-    // TODO: Implementare SQLite via IPC con main process
-    this.storage = window.localStorage;
-
-    // Inizializza le tabelle se non esistono
-    this.initTables();
+    try {
+      const result = await window.electronAPI.dbInit(pdfDirectory, bookId);
+      if (result.success) {
+        this.initialized = true;
+        console.log('[DB] Database SQLite inizializzato:', result.path);
+      } else {
+        console.error('[DB] Errore inizializzazione:', result.error);
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      console.error('[DB] Errore init:', error);
+      throw error;
+    }
   }
 
-  initTables() {
-    // Crea le "tabelle" in localStorage se non esistono
-    if (!this.storage.getItem(`notes_${this.bookId}`)) {
-      this.storage.setItem(`notes_${this.bookId}`, JSON.stringify([]));
-    }
-    if (!this.storage.getItem(`annotations_${this.bookId}`)) {
-      this.storage.setItem(`annotations_${this.bookId}`, JSON.stringify([]));
-    }
-    if (!this.storage.getItem(`mindmap_${this.bookId}`)) {
-      this.storage.setItem(`mindmap_${this.bookId}`, JSON.stringify(null));
-    }
-    if (!this.storage.getItem(`summary_${this.bookId}`)) {
-      this.storage.setItem(`summary_${this.bookId}`, JSON.stringify(null));
+  async close() {
+    if (this.initialized) {
+      await window.electronAPI.dbClose();
+      this.initialized = false;
+      console.log('[DB] Database chiuso');
     }
   }
 
   // --- NOTES ---
 
   async getNotes() {
-    const notes = JSON.parse(this.storage.getItem(`notes_${this.bookId}`) || '[]');
-    return notes;
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetNotes();
+  }
+
+  async getNoteById(id) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetNote(id);
   }
 
   async saveNote(note) {
-    const notes = await this.getNotes();
-    const newNote = {
-      id: Date.now(),
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbSaveNote({
       content: note.content,
       pageNumber: note.pageNumber || null,
       selectionText: note.selectionText || null,
       pdfCoordinates: note.pdfCoordinates || null,
-      annotationId: note.annotationId || null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    notes.push(newNote);
-    this.storage.setItem(`notes_${this.bookId}`, JSON.stringify(notes));
-    return newNote;
+      annotationId: note.annotationId || null
+    });
   }
 
   async updateNote(id, updates) {
-    const notes = await this.getNotes();
-    const index = notes.findIndex(n => n.id === id);
-    if (index !== -1) {
-      // Supporta aggiornamento parziale
-      if (typeof updates === 'string') {
-        notes[index].content = updates;
-      } else {
-        notes[index] = { ...notes[index], ...updates };
-      }
-      notes[index].updatedAt = new Date().toISOString();
-      this.storage.setItem(`notes_${this.bookId}`, JSON.stringify(notes));
-      return notes[index];
-    }
-    return null;
+    if (!this.initialized) return null;
+    // Supporta aggiornamento con stringa (solo content) o oggetto
+    const updateData = typeof updates === 'string'
+      ? { content: updates }
+      : updates;
+    return await window.electronAPI.dbUpdateNote(id, updateData);
   }
 
   async deleteNote(id) {
-    const notes = await this.getNotes();
-    const filtered = notes.filter(n => n.id !== id);
-    this.storage.setItem(`notes_${this.bookId}`, JSON.stringify(filtered));
-    return true;
-  }
-
-  async getNoteById(id) {
-    const notes = await this.getNotes();
-    return notes.find(n => n.id === id) || null;
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteNote(id);
   }
 
   // --- ANNOTATIONS (Highlights + Outlines) ---
 
   async getAnnotations() {
-    const annotations = JSON.parse(this.storage.getItem(`annotations_${this.bookId}`) || '[]');
-    return annotations;
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetAnnotations();
   }
 
   async getAnnotationsByPage(pageNumber) {
-    const annotations = await this.getAnnotations();
-    return annotations.filter(a => a.pageNumber === pageNumber);
-  }
-
-  async saveAnnotation(annotation) {
-    const annotations = await this.getAnnotations();
-    const newAnnotation = {
-      id: Date.now(),
-      type: annotation.type || 'highlight', // 'highlight' | 'outline'
-      pageNumber: annotation.pageNumber,
-      text: annotation.text,
-      color: annotation.color || (annotation.type === 'outline' ? '#8b5cf6' : '#ffff00'),
-      opacity: annotation.opacity || (annotation.type === 'outline' ? 0.08 : 0.35),
-      rects: annotation.rects || [], // Array di { x, y, width, height } normalizzati 0-1
-      noteId: annotation.noteId || null,
-      createdAt: new Date().toISOString()
-    };
-    annotations.push(newAnnotation);
-    this.storage.setItem(`annotations_${this.bookId}`, JSON.stringify(annotations));
-    return newAnnotation;
-  }
-
-  async updateAnnotation(id, updates) {
-    const annotations = await this.getAnnotations();
-    const index = annotations.findIndex(a => a.id === id);
-    if (index !== -1) {
-      annotations[index] = { ...annotations[index], ...updates };
-      this.storage.setItem(`annotations_${this.bookId}`, JSON.stringify(annotations));
-      return annotations[index];
-    }
-    return null;
-  }
-
-  async deleteAnnotation(id) {
-    const annotations = await this.getAnnotations();
-    const filtered = annotations.filter(a => a.id !== id);
-    this.storage.setItem(`annotations_${this.bookId}`, JSON.stringify(filtered));
-    return true;
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetAnnotationsByPage(pageNumber);
   }
 
   async getAnnotationById(id) {
-    const annotations = await this.getAnnotations();
-    return annotations.find(a => a.id === id) || null;
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetAnnotation(id);
   }
 
-  // Legacy method for backward compatibility
+  async saveAnnotation(annotation) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbSaveAnnotation({
+      type: annotation.type || 'highlight',
+      pageNumber: annotation.pageNumber,
+      text: annotation.text || null,
+      color: annotation.color || (annotation.type === 'outline' ? '#8b5cf6' : '#ffff00'),
+      opacity: annotation.opacity || (annotation.type === 'outline' ? 0.08 : 0.35),
+      rects: annotation.rects || [],
+      noteId: annotation.noteId || null
+    });
+  }
+
+  async updateAnnotation(id, updates) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpdateAnnotation(id, updates);
+  }
+
+  async deleteAnnotation(id) {
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteAnnotation(id);
+  }
+
+  // Legacy methods for backward compatibility
   async getHighlights() {
     return this.getAnnotations();
   }
@@ -160,33 +127,25 @@ class DatabaseManager {
   // --- MINDMAP ---
 
   async getMindmap() {
-    const mindmap = JSON.parse(this.storage.getItem(`mindmap_${this.bookId}`) || 'null');
-    return mindmap;
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetMindmap();
   }
 
   async saveMindmap(data) {
-    const mindmap = {
-      data: data,
-      updatedAt: new Date().toISOString()
-    };
-    this.storage.setItem(`mindmap_${this.bookId}`, JSON.stringify(mindmap));
-    return mindmap;
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbSaveMindmap(data);
   }
 
   // --- SUMMARY ---
 
   async getSummary() {
-    const summary = JSON.parse(this.storage.getItem(`summary_${this.bookId}`) || 'null');
-    return summary;
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetSummary();
   }
 
   async saveSummary(content) {
-    const summary = {
-      content: content,
-      updatedAt: new Date().toISOString()
-    };
-    this.storage.setItem(`summary_${this.bookId}`, JSON.stringify(summary));
-    return summary;
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbSaveSummary(content);
   }
 }
 
