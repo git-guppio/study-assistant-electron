@@ -1,16 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PDFViewer from './components/PDFViewer';
 import NotesEditor from './components/NotesEditor';
 import MindMap from './components/MindMap';
 import SummaryEditor from './components/SummaryEditor';
-import { initDatabase } from './database/db';
+import { initDatabase, getDatabase } from './database/db';
 
 function App() {
   const [bookInfo, setBookInfo] = useState(null);
   const [activeTab, setActiveTab] = useState('notes');
   const [pdfPath, setPdfPath] = useState(null);
   const [selectedText, setSelectedText] = useState(null);
-  const [highlights, setHighlights] = useState([]);
+  const [annotations, setAnnotations] = useState([]);
+  const [dbReady, setDbReady] = useState(false);
+
+  // Ref per NotesEditor (per scroll-to-note)
+  const notesEditorRef = useRef(null);
 
   // Carica informazioni libro all'avvio
   useEffect(() => {
@@ -19,55 +23,167 @@ function App() {
         const info = await window.electronAPI.getBookInfo();
         setBookInfo(info);
         setPdfPath(info.filePath);
-        
+
         // Inizializza database
         if (info.filePath) {
           const pdfDir = await window.electronAPI.getPdfDirectory(info.filePath);
           await initDatabase(pdfDir, info.bookId);
+          setDbReady(true);
         }
-        
+
         console.log('📚 Book loaded:', info);
       } catch (error) {
         console.error('Error loading book info:', error);
       }
     }
-    
+
     loadBookInfo();
   }, []);
 
-  // Gestisce la selezione di testo nel PDF
+  // Carica annotazioni quando il database e' pronto
+  useEffect(() => {
+    async function loadAnnotations() {
+      const db = getDatabase();
+      if (db) {
+        try {
+          const savedAnnotations = await db.getAnnotations();
+          setAnnotations(savedAnnotations);
+          console.log('📍 Annotations loaded:', savedAnnotations.length);
+        } catch (error) {
+          console.error('Error loading annotations:', error);
+        }
+      }
+    }
+
+    if (dbReady) {
+      loadAnnotations();
+    }
+  }, [dbReady]);
+
+  // Gestisce la selezione di testo nel PDF (per "Aggiungi alle note")
   const handleTextSelection = (selection) => {
     setSelectedText(selection);
-    // Cambia automaticamente alla tab Note quando si seleziona del testo
     if (selection && selection.text) {
       setActiveTab('notes');
     }
   };
 
-  // Gestisce la creazione di un evidenziazione
-  const handleCreateHighlight = (highlight) => {
-    setHighlights([...highlights, highlight]);
-    // Qui salveremo nel database
+  // Crea un Highlight (senza nota collegata)
+  const handleCreateHighlight = async (annotationData) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      const newAnnotation = await db.saveAnnotation({
+        type: 'highlight',
+        pageNumber: annotationData.pageNumber,
+        text: annotationData.text,
+        color: annotationData.color,
+        opacity: annotationData.opacity || 0.35,
+        rects: annotationData.rects,
+        noteId: null
+      });
+
+      setAnnotations(prev => [...prev, newAnnotation]);
+      console.log('🖍️ Highlight created:', newAnnotation.id);
+    } catch (error) {
+      console.error('Error creating highlight:', error);
+    }
+  };
+
+  // Crea un Outline + Nota collegata automaticamente
+  const handleCreateOutline = async (annotationData) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      // 1. Crea la nota con il testo selezionato
+      const noteContent = `<blockquote><p>${annotationData.text}</p></blockquote><p><em>[Pagina ${annotationData.pageNumber}]</em></p>`;
+
+      const newNote = await db.saveNote({
+        content: noteContent,
+        pageNumber: annotationData.pageNumber,
+        selectionText: annotationData.text,
+        pdfCoordinates: {
+          x: annotationData.rects[0]?.x || 0,
+          y: annotationData.rects[0]?.y || 0,
+          pageNumber: annotationData.pageNumber
+        }
+      });
+
+      // 2. Crea l'outline con riferimento alla nota
+      const newAnnotation = await db.saveAnnotation({
+        type: 'outline',
+        pageNumber: annotationData.pageNumber,
+        text: annotationData.text,
+        color: annotationData.color,
+        opacity: annotationData.opacity || 0.08,
+        rects: annotationData.rects,
+        noteId: newNote.id
+      });
+
+      // 3. Aggiorna la nota con riferimento all'annotazione
+      await db.updateNote(newNote.id, {
+        annotationId: newAnnotation.id
+      });
+
+      setAnnotations(prev => [...prev, newAnnotation]);
+
+      // 4. Switch alla tab note
+      setActiveTab('notes');
+
+      console.log('📌 Outline + Note created:', newAnnotation.id, newNote.id);
+    } catch (error) {
+      console.error('Error creating outline:', error);
+    }
+  };
+
+  // Elimina un'annotazione
+  const handleDeleteAnnotation = async (annotationId) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      await db.deleteAnnotation(annotationId);
+      setAnnotations(prev => prev.filter(a => a.id !== annotationId));
+      console.log('🗑️ Annotation deleted:', annotationId);
+    } catch (error) {
+      console.error('Error deleting annotation:', error);
+    }
+  };
+
+  // Click su gutter icon -> scrolla alla nota
+  const handleGutterClick = (annotation) => {
+    if (annotation.noteId) {
+      setActiveTab('notes');
+      // Usa un piccolo delay per assicurarsi che la tab sia visibile
+      setTimeout(() => {
+        if (notesEditorRef.current?.scrollToNote) {
+          notesEditorRef.current.scrollToNote(annotation.noteId);
+        }
+      }, 100);
+    }
   };
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'notes':
         return (
-          <NotesEditor 
+          <NotesEditor
+            ref={notesEditorRef}
             selectedText={selectedText}
             bookId={bookInfo?.bookId}
           />
         );
       case 'mindmap':
         return (
-          <MindMap 
+          <MindMap
             bookId={bookInfo?.bookId}
           />
         );
       case 'summary':
         return (
-          <SummaryEditor 
+          <SummaryEditor
             bookId={bookInfo?.bookId}
           />
         );
@@ -93,15 +209,18 @@ function App() {
             </div>
           )}
         </div>
-        
+
         <div className="flex items-center space-x-2">
-          <button 
+          <span className="text-xs text-gray-500 mr-2">
+            {annotations.length} annotazioni
+          </span>
+          <button
             className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
             onClick={() => {/* TODO: Implement save */}}
           >
             💾 Salva
           </button>
-          <button 
+          <button
             className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
             onClick={() => {/* TODO: Implement export */}}
           >
@@ -121,11 +240,14 @@ function App() {
           </div>
           <div className="flex-1 overflow-auto">
             {pdfPath ? (
-              <PDFViewer 
+              <PDFViewer
                 filePath={pdfPath}
+                annotations={annotations}
                 onTextSelection={handleTextSelection}
                 onCreateHighlight={handleCreateHighlight}
-                highlights={highlights}
+                onCreateOutline={handleCreateOutline}
+                onDeleteAnnotation={handleDeleteAnnotation}
+                onGutterClick={handleGutterClick}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-500">

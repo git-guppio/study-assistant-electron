@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
@@ -6,9 +6,14 @@ import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import { getDatabase } from '../database/db';
 
-function NotesEditor({ selectedText, bookId }) {
+const NotesEditor = forwardRef(function NotesEditor({ selectedText, bookId }, ref) {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [highlightedNoteId, setHighlightedNoteId] = useState(null);
+
+  // Refs per scroll-to-note
+  const noteRefs = useRef({});
+  const notesListRef = useRef(null);
 
   const editor = useEditor({
     extensions: [
@@ -28,6 +33,19 @@ function NotesEditor({ selectedText, bookId }) {
       },
     },
   });
+
+  // Esponi scrollToNote via ref
+  useImperativeHandle(ref, () => ({
+    scrollToNote: (noteId) => {
+      const noteElement = noteRefs.current[noteId];
+      if (noteElement) {
+        noteElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedNoteId(noteId);
+        // Rimuovi highlight dopo 2 secondi
+        setTimeout(() => setHighlightedNoteId(null), 2000);
+      }
+    }
+  }), []);
 
   // Carica note esistenti
   useEffect(() => {
@@ -78,7 +96,7 @@ function NotesEditor({ selectedText, bookId }) {
     if (db) {
       const savedNotes = await db.getNotes();
       setNotes(savedNotes);
-      
+
       // Se ci sono note salvate, carica l'ultima
       if (savedNotes.length > 0 && editor) {
         editor.commands.setContent(savedNotes[savedNotes.length - 1].content);
@@ -88,11 +106,11 @@ function NotesEditor({ selectedText, bookId }) {
 
   const handleSave = async () => {
     if (!editor) return;
-    
+
     setLoading(true);
     const content = editor.getHTML();
     const db = getDatabase();
-    
+
     if (db) {
       await db.saveNote({
         content: content,
@@ -100,10 +118,10 @@ function NotesEditor({ selectedText, bookId }) {
         selectionText: null,
         pdfCoordinates: null,
       });
-      
+
       await loadNotes();
     }
-    
+
     setLoading(false);
   };
 
@@ -119,6 +137,21 @@ function NotesEditor({ selectedText, bookId }) {
     if (url && editor) {
       editor.chain().focus().setLink({ href: url }).run();
     }
+  };
+
+  // Handler per caricare una nota nell'editor
+  const handleLoadNote = (note) => {
+    if (editor) {
+      editor.commands.setContent(note.content);
+    }
+  };
+
+  // Estrai un preview dal contenuto HTML
+  const getNotePreview = (htmlContent, maxLength = 50) => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    const text = tempDiv.textContent || tempDiv.innerText || '';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   };
 
   if (!editor) {
@@ -158,7 +191,7 @@ function NotesEditor({ selectedText, bookId }) {
           >
             <s>S</s>
           </button>
-          
+
           <div className="w-px bg-gray-300 mx-1"></div>
 
           {/* Headings */}
@@ -231,21 +264,21 @@ function NotesEditor({ selectedText, bookId }) {
             }`}
             title="Evidenzia"
           >
-            🖍️ Highlight
+            Highlight
           </button>
           <button
             onClick={addImage}
             className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
             title="Inserisci immagine"
           >
-            🖼️ Immagine
+            Immagine
           </button>
           <button
             onClick={addLink}
             className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
             title="Inserisci link"
           >
-            🔗 Link
+            Link
           </button>
 
           <div className="flex-1"></div>
@@ -256,7 +289,7 @@ function NotesEditor({ selectedText, bookId }) {
             disabled={loading}
             className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
           >
-            {loading ? '...' : '💾 Salva Note'}
+            {loading ? '...' : 'Salva Note'}
           </button>
         </div>
       </div>
@@ -270,32 +303,66 @@ function NotesEditor({ selectedText, bookId }) {
       {selectedText && (
         <div className="border-t border-gray-200 p-3 bg-blue-50">
           <p className="text-xs text-blue-800">
-            ✓ Testo dal PDF inserito come citazione (Pagina {selectedText.pageNumber})
+            Testo dal PDF inserito come citazione (Pagina {selectedText.pageNumber})
           </p>
         </div>
       )}
 
-      {/* Notes List */}
+      {/* Notes List - Scrollable */}
       {notes.length > 0 && (
-        <div className="border-t border-gray-200 p-3 bg-gray-50">
-          <p className="text-xs text-gray-600 mb-2">
-            📝 Note salvate: {notes.length}
-          </p>
-          <div className="flex gap-2 overflow-x-auto">
-            {notes.slice(-5).reverse().map((note, idx) => (
-              <button
+        <div
+          ref={notesListRef}
+          className="border-t border-gray-200 bg-gray-50 max-h-48 overflow-y-auto"
+        >
+          <div className="p-3 border-b border-gray-200 bg-gray-100 sticky top-0">
+            <p className="text-xs text-gray-600 font-medium">
+              Note salvate: {notes.length}
+            </p>
+          </div>
+          <div className="divide-y divide-gray-200">
+            {notes.map((note) => (
+              <div
                 key={note.id}
-                onClick={() => editor.commands.setContent(note.content)}
-                className="px-2 py-1 text-xs bg-white border border-gray-300 rounded hover:bg-gray-100 whitespace-nowrap"
+                ref={(el) => { noteRefs.current[note.id] = el; }}
+                className={`note-item p-3 cursor-pointer hover:bg-gray-100 transition-colors ${
+                  highlightedNoteId === note.id ? 'highlighted' : ''
+                }`}
+                onClick={() => handleLoadNote(note)}
               >
-                Nota {notes.length - idx}
-              </button>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 truncate">
+                      {getNotePreview(note.content)}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {note.pageNumber && (
+                        <span className="text-xs text-blue-600">
+                          Pag. {note.pageNumber}
+                        </span>
+                      )}
+                      {note.annotationId && (
+                        <span className="text-xs text-purple-600">
+                          Con annotazione
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-400">
+                        {new Date(note.createdAt).toLocaleDateString('it-IT', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         </div>
       )}
     </div>
   );
-}
+});
 
 export default NotesEditor;

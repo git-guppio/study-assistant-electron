@@ -11,13 +11,13 @@ class DatabaseManager {
   async init(pdfDirectory, bookId) {
     this.dbPath = `${pdfDirectory}/book_notes_${bookId}.db`;
     this.bookId = bookId;
-    
+
     console.log('📦 Database path:', this.dbPath);
-    
+
     // Per ora usiamo localStorage come storage temporaneo
     // TODO: Implementare SQLite via IPC con main process
     this.storage = window.localStorage;
-    
+
     // Inizializza le tabelle se non esistono
     this.initTables();
   }
@@ -27,8 +27,8 @@ class DatabaseManager {
     if (!this.storage.getItem(`notes_${this.bookId}`)) {
       this.storage.setItem(`notes_${this.bookId}`, JSON.stringify([]));
     }
-    if (!this.storage.getItem(`highlights_${this.bookId}`)) {
-      this.storage.setItem(`highlights_${this.bookId}`, JSON.stringify([]));
+    if (!this.storage.getItem(`annotations_${this.bookId}`)) {
+      this.storage.setItem(`annotations_${this.bookId}`, JSON.stringify([]));
     }
     if (!this.storage.getItem(`mindmap_${this.bookId}`)) {
       this.storage.setItem(`mindmap_${this.bookId}`, JSON.stringify(null));
@@ -39,7 +39,7 @@ class DatabaseManager {
   }
 
   // --- NOTES ---
-  
+
   async getNotes() {
     const notes = JSON.parse(this.storage.getItem(`notes_${this.bookId}`) || '[]');
     return notes;
@@ -50,9 +50,10 @@ class DatabaseManager {
     const newNote = {
       id: Date.now(),
       content: note.content,
-      pageNumber: note.pageNumber,
-      selectionText: note.selectionText,
-      pdfCoordinates: note.pdfCoordinates,
+      pageNumber: note.pageNumber || null,
+      selectionText: note.selectionText || null,
+      pdfCoordinates: note.pdfCoordinates || null,
+      annotationId: note.annotationId || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -61,11 +62,16 @@ class DatabaseManager {
     return newNote;
   }
 
-  async updateNote(id, content) {
+  async updateNote(id, updates) {
     const notes = await this.getNotes();
     const index = notes.findIndex(n => n.id === id);
     if (index !== -1) {
-      notes[index].content = content;
+      // Supporta aggiornamento parziale
+      if (typeof updates === 'string') {
+        notes[index].content = updates;
+      } else {
+        notes[index] = { ...notes[index], ...updates };
+      }
       notes[index].updatedAt = new Date().toISOString();
       this.storage.setItem(`notes_${this.bookId}`, JSON.stringify(notes));
       return notes[index];
@@ -80,38 +86,79 @@ class DatabaseManager {
     return true;
   }
 
-  // --- HIGHLIGHTS ---
-  
-  async getHighlights() {
-    const highlights = JSON.parse(this.storage.getItem(`highlights_${this.bookId}`) || '[]');
-    return highlights;
+  async getNoteById(id) {
+    const notes = await this.getNotes();
+    return notes.find(n => n.id === id) || null;
   }
 
-  async saveHighlight(highlight) {
-    const highlights = await this.getHighlights();
-    const newHighlight = {
+  // --- ANNOTATIONS (Highlights + Outlines) ---
+
+  async getAnnotations() {
+    const annotations = JSON.parse(this.storage.getItem(`annotations_${this.bookId}`) || '[]');
+    return annotations;
+  }
+
+  async getAnnotationsByPage(pageNumber) {
+    const annotations = await this.getAnnotations();
+    return annotations.filter(a => a.pageNumber === pageNumber);
+  }
+
+  async saveAnnotation(annotation) {
+    const annotations = await this.getAnnotations();
+    const newAnnotation = {
       id: Date.now(),
-      pageNumber: highlight.pageNumber,
-      text: highlight.text,
-      color: highlight.color || '#ffff00',
-      coordinates: highlight.coordinates,
-      noteId: highlight.noteId || null,
+      type: annotation.type || 'highlight', // 'highlight' | 'outline'
+      pageNumber: annotation.pageNumber,
+      text: annotation.text,
+      color: annotation.color || (annotation.type === 'outline' ? '#8b5cf6' : '#ffff00'),
+      opacity: annotation.opacity || (annotation.type === 'outline' ? 0.08 : 0.35),
+      rects: annotation.rects || [], // Array di { x, y, width, height } normalizzati 0-1
+      noteId: annotation.noteId || null,
       createdAt: new Date().toISOString()
     };
-    highlights.push(newHighlight);
-    this.storage.setItem(`highlights_${this.bookId}`, JSON.stringify(highlights));
-    return newHighlight;
+    annotations.push(newAnnotation);
+    this.storage.setItem(`annotations_${this.bookId}`, JSON.stringify(annotations));
+    return newAnnotation;
   }
 
-  async deleteHighlight(id) {
-    const highlights = await this.getHighlights();
-    const filtered = highlights.filter(h => h.id !== id);
-    this.storage.setItem(`highlights_${this.bookId}`, JSON.stringify(filtered));
+  async updateAnnotation(id, updates) {
+    const annotations = await this.getAnnotations();
+    const index = annotations.findIndex(a => a.id === id);
+    if (index !== -1) {
+      annotations[index] = { ...annotations[index], ...updates };
+      this.storage.setItem(`annotations_${this.bookId}`, JSON.stringify(annotations));
+      return annotations[index];
+    }
+    return null;
+  }
+
+  async deleteAnnotation(id) {
+    const annotations = await this.getAnnotations();
+    const filtered = annotations.filter(a => a.id !== id);
+    this.storage.setItem(`annotations_${this.bookId}`, JSON.stringify(filtered));
     return true;
   }
 
+  async getAnnotationById(id) {
+    const annotations = await this.getAnnotations();
+    return annotations.find(a => a.id === id) || null;
+  }
+
+  // Legacy method for backward compatibility
+  async getHighlights() {
+    return this.getAnnotations();
+  }
+
+  async saveHighlight(highlight) {
+    return this.saveAnnotation(highlight);
+  }
+
+  async deleteHighlight(id) {
+    return this.deleteAnnotation(id);
+  }
+
   // --- MINDMAP ---
-  
+
   async getMindmap() {
     const mindmap = JSON.parse(this.storage.getItem(`mindmap_${this.bookId}`) || 'null');
     return mindmap;
@@ -127,7 +174,7 @@ class DatabaseManager {
   }
 
   // --- SUMMARY ---
-  
+
   async getSummary() {
     const summary = JSON.parse(this.storage.getItem(`summary_${this.bookId}`) || 'null');
     return summary;
