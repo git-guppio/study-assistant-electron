@@ -99,11 +99,12 @@ function saveToFile() {
  * Crea le tabelle del database
  */
 function createTables() {
-  // Tabella Note
+  // Tabella Note (estesa con campi per il nuovo sistema)
   db.run(`
     CREATE TABLE IF NOT EXISTS notes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       content TEXT NOT NULL,
+      comment TEXT,
       pageNumber INTEGER,
       selectionText TEXT,
       pdfCoordinates TEXT,
@@ -113,19 +114,88 @@ function createTables() {
     )
   `);
 
-  // Tabella Annotazioni (highlights e outlines)
+  // Tabella Annotazioni (estesa per supportare tutti i tipi)
   db.run(`
     CREATE TABLE IF NOT EXISTS annotations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL CHECK(type IN ('highlight', 'outline')),
+      type TEXT NOT NULL CHECK(type IN ('highlight', 'outline', 'note', 'flashcard', 'dictionary', 'keyword')),
       pageNumber INTEGER NOT NULL,
       text TEXT,
       color TEXT NOT NULL,
       opacity REAL DEFAULT 0.35,
       rects TEXT NOT NULL,
+      gutterIconId TEXT,
       noteId INTEGER,
       createdAt TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (noteId) REFERENCES notes(id) ON DELETE SET NULL
+    )
+  `);
+
+  // Tabella Default Documento (colori e preferenze per documento)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS document_defaults (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      highlightColor TEXT DEFAULT '#eab308',
+      lastNoteIconId TEXT DEFAULT 'note',
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Tabella Colori Custom per Icona (associazione icona-colore personalizzata)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS document_icon_colors (
+      iconId TEXT PRIMARY KEY,
+      customColor TEXT NOT NULL,
+      updatedAt TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Tabella Colori Custom per Azioni (flashcard, dictionary, keyword)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS document_action_colors (
+      actionType TEXT PRIMARY KEY,
+      customColor TEXT NOT NULL,
+      updatedAt TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Tabella Flashcards (per tab Flashcard)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS flashcards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      question TEXT,
+      answer TEXT,
+      annotationId INTEGER,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (annotationId) REFERENCES annotations(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Tabella Dictionary Entries (per tab Dizionario)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS dictionary_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      term TEXT NOT NULL,
+      definition TEXT,
+      annotationId INTEGER,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (annotationId) REFERENCES annotations(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Tabella Keywords (per tab Keywords)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS keywords (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      keyword TEXT NOT NULL,
+      context TEXT,
+      annotationId INTEGER,
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (annotationId) REFERENCES annotations(id) ON DELETE CASCADE
     )
   `);
 
@@ -149,7 +219,31 @@ function createTables() {
 
   // Indici per performance
   db.run(`CREATE INDEX IF NOT EXISTS idx_annotations_page ON annotations(pageNumber)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_annotations_type ON annotations(type)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_notes_annotation ON notes(annotationId)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_flashcards_annotation ON flashcards(annotationId)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_dictionary_annotation ON dictionary_entries(annotationId)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_keywords_annotation ON keywords(annotationId)`);
+
+  // Migrazione: converti vecchi 'outline' in 'note'
+  migrateOutlineToNote();
+}
+
+/**
+ * Migra i vecchi record 'outline' al nuovo tipo 'note'
+ */
+function migrateOutlineToNote() {
+  try {
+    // Verifica se ci sono outline da migrare
+    const outlines = queryAll("SELECT id FROM annotations WHERE type = 'outline'");
+    if (outlines.length > 0) {
+      db.run("UPDATE annotations SET type = 'note', gutterIconId = 'note' WHERE type = 'outline'");
+      console.log(`[SQLite] Migrati ${outlines.length} outline -> note`);
+      saveToFile();
+    }
+  } catch (error) {
+    console.error('[SQLite] Errore migrazione outline:', error);
+  }
 }
 
 /**
@@ -297,8 +391,8 @@ function getAnnotationById(id) {
 
 function saveAnnotation(annData) {
   const result = runQuery(
-    `INSERT INTO annotations (type, pageNumber, text, color, opacity, rects, noteId)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO annotations (type, pageNumber, text, color, opacity, rects, gutterIconId, noteId)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       annData.type,
       annData.pageNumber,
@@ -306,6 +400,7 @@ function saveAnnotation(annData) {
       annData.color,
       annData.opacity || 0.35,
       JSON.stringify(annData.rects),
+      annData.gutterIconId || null,
       annData.noteId || null
     ]
   );
@@ -327,6 +422,10 @@ function updateAnnotation(id, updates) {
   if (updates.noteId !== undefined) {
     fields.push('noteId = ?');
     values.push(updates.noteId);
+  }
+  if (updates.gutterIconId !== undefined) {
+    fields.push('gutterIconId = ?');
+    values.push(updates.gutterIconId);
   }
 
   if (fields.length === 0) return getAnnotationById(id);
@@ -384,6 +483,236 @@ function saveSummary(content) {
   return getSummary();
 }
 
+// ==================== DOCUMENT DEFAULTS ====================
+
+function getDocumentDefaults() {
+  let defaults = queryOne('SELECT * FROM document_defaults WHERE id = 1');
+  if (!defaults) {
+    // Crea defaults se non esistono
+    runQuery(
+      `INSERT INTO document_defaults (id, highlightColor, lastNoteIconId)
+       VALUES (1, '#eab308', 'note')`
+    );
+    defaults = queryOne('SELECT * FROM document_defaults WHERE id = 1');
+  }
+  return defaults;
+}
+
+function updateDocumentDefaults(updates) {
+  const fields = [];
+  const values = [];
+
+  if (updates.highlightColor !== undefined) {
+    fields.push('highlightColor = ?');
+    values.push(updates.highlightColor);
+  }
+  if (updates.lastNoteIconId !== undefined) {
+    fields.push('lastNoteIconId = ?');
+    values.push(updates.lastNoteIconId);
+  }
+
+  if (fields.length === 0) return getDocumentDefaults();
+
+  fields.push("updatedAt = datetime('now')");
+  runQuery(
+    `INSERT INTO document_defaults (id) VALUES (1) ON CONFLICT(id) DO UPDATE SET ${fields.join(', ')}`,
+    values
+  );
+  return getDocumentDefaults();
+}
+
+// ==================== ICON COLORS (CUSTOM) ====================
+
+function getCustomIconColor(iconId) {
+  const row = queryOne('SELECT customColor FROM document_icon_colors WHERE iconId = ?', [iconId]);
+  return row ? row.customColor : null;
+}
+
+function getAllCustomIconColors() {
+  return queryAll('SELECT * FROM document_icon_colors');
+}
+
+function upsertCustomIconColor(iconId, color) {
+  runQuery(
+    `INSERT INTO document_icon_colors (iconId, customColor, updatedAt)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(iconId) DO UPDATE SET
+       customColor = excluded.customColor,
+       updatedAt = datetime('now')`,
+    [iconId, color]
+  );
+  return getCustomIconColor(iconId);
+}
+
+function deleteCustomIconColor(iconId) {
+  const result = runQuery('DELETE FROM document_icon_colors WHERE iconId = ?', [iconId]);
+  return result.changes > 0;
+}
+
+// ==================== ACTION COLORS (CUSTOM) ====================
+
+function getCustomActionColor(actionType) {
+  const row = queryOne('SELECT customColor FROM document_action_colors WHERE actionType = ?', [actionType]);
+  return row ? row.customColor : null;
+}
+
+function getAllCustomActionColors() {
+  return queryAll('SELECT * FROM document_action_colors');
+}
+
+function upsertCustomActionColor(actionType, color) {
+  runQuery(
+    `INSERT INTO document_action_colors (actionType, customColor, updatedAt)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(actionType) DO UPDATE SET
+       customColor = excluded.customColor,
+       updatedAt = datetime('now')`,
+    [actionType, color]
+  );
+  return getCustomActionColor(actionType);
+}
+
+function deleteCustomActionColor(actionType) {
+  const result = runQuery('DELETE FROM document_action_colors WHERE actionType = ?', [actionType]);
+  return result.changes > 0;
+}
+
+// ==================== FLASHCARDS ====================
+
+function getFlashcards() {
+  const cards = queryAll('SELECT * FROM flashcards ORDER BY createdAt DESC');
+  return cards;
+}
+
+function getFlashcardById(id) {
+  return queryOne('SELECT * FROM flashcards WHERE id = ?', [id]);
+}
+
+function saveFlashcard(data) {
+  const result = runQuery(
+    `INSERT INTO flashcards (question, answer, annotationId)
+     VALUES (?, ?, ?)`,
+    [data.question || '', data.answer || '', data.annotationId || null]
+  );
+  return getFlashcardById(result.lastInsertRowid);
+}
+
+function updateFlashcard(id, updates) {
+  const fields = [];
+  const values = [];
+
+  if (updates.question !== undefined) {
+    fields.push('question = ?');
+    values.push(updates.question);
+  }
+  if (updates.answer !== undefined) {
+    fields.push('answer = ?');
+    values.push(updates.answer);
+  }
+
+  if (fields.length === 0) return getFlashcardById(id);
+
+  fields.push("updatedAt = datetime('now')");
+  values.push(id);
+  runQuery(`UPDATE flashcards SET ${fields.join(', ')} WHERE id = ?`, values);
+  return getFlashcardById(id);
+}
+
+function deleteFlashcard(id) {
+  const result = runQuery('DELETE FROM flashcards WHERE id = ?', [id]);
+  return result.changes > 0;
+}
+
+// ==================== DICTIONARY ENTRIES ====================
+
+function getDictionaryEntries() {
+  return queryAll('SELECT * FROM dictionary_entries ORDER BY term ASC');
+}
+
+function getDictionaryEntryById(id) {
+  return queryOne('SELECT * FROM dictionary_entries WHERE id = ?', [id]);
+}
+
+function saveDictionaryEntry(data) {
+  const result = runQuery(
+    `INSERT INTO dictionary_entries (term, definition, annotationId)
+     VALUES (?, ?, ?)`,
+    [data.term, data.definition || '', data.annotationId || null]
+  );
+  return getDictionaryEntryById(result.lastInsertRowid);
+}
+
+function updateDictionaryEntry(id, updates) {
+  const fields = [];
+  const values = [];
+
+  if (updates.term !== undefined) {
+    fields.push('term = ?');
+    values.push(updates.term);
+  }
+  if (updates.definition !== undefined) {
+    fields.push('definition = ?');
+    values.push(updates.definition);
+  }
+
+  if (fields.length === 0) return getDictionaryEntryById(id);
+
+  fields.push("updatedAt = datetime('now')");
+  values.push(id);
+  runQuery(`UPDATE dictionary_entries SET ${fields.join(', ')} WHERE id = ?`, values);
+  return getDictionaryEntryById(id);
+}
+
+function deleteDictionaryEntry(id) {
+  const result = runQuery('DELETE FROM dictionary_entries WHERE id = ?', [id]);
+  return result.changes > 0;
+}
+
+// ==================== KEYWORDS ====================
+
+function getKeywords() {
+  return queryAll('SELECT * FROM keywords ORDER BY keyword ASC');
+}
+
+function getKeywordById(id) {
+  return queryOne('SELECT * FROM keywords WHERE id = ?', [id]);
+}
+
+function saveKeyword(data) {
+  const result = runQuery(
+    `INSERT INTO keywords (keyword, context, annotationId)
+     VALUES (?, ?, ?)`,
+    [data.keyword, data.context || '', data.annotationId || null]
+  );
+  return getKeywordById(result.lastInsertRowid);
+}
+
+function updateKeyword(id, updates) {
+  const fields = [];
+  const values = [];
+
+  if (updates.keyword !== undefined) {
+    fields.push('keyword = ?');
+    values.push(updates.keyword);
+  }
+  if (updates.context !== undefined) {
+    fields.push('context = ?');
+    values.push(updates.context);
+  }
+
+  if (fields.length === 0) return getKeywordById(id);
+
+  fields.push("updatedAt = datetime('now')");
+  values.push(id);
+  runQuery(`UPDATE keywords SET ${fields.join(', ')} WHERE id = ?`, values);
+  return getKeywordById(id);
+}
+
+function deleteKeyword(id) {
+  const result = runQuery('DELETE FROM keywords WHERE id = ?', [id]);
+  return result.changes > 0;
+}
+
 // ==================== EXPORT ====================
 
 module.exports = {
@@ -407,5 +736,36 @@ module.exports = {
   saveMindmap,
   // Summary
   getSummary,
-  saveSummary
+  saveSummary,
+  // Document Defaults
+  getDocumentDefaults,
+  updateDocumentDefaults,
+  // Custom Icon Colors
+  getCustomIconColor,
+  getAllCustomIconColors,
+  upsertCustomIconColor,
+  deleteCustomIconColor,
+  // Custom Action Colors
+  getCustomActionColor,
+  getAllCustomActionColors,
+  upsertCustomActionColor,
+  deleteCustomActionColor,
+  // Flashcards
+  getFlashcards,
+  getFlashcardById,
+  saveFlashcard,
+  updateFlashcard,
+  deleteFlashcard,
+  // Dictionary
+  getDictionaryEntries,
+  getDictionaryEntryById,
+  saveDictionaryEntry,
+  updateDictionaryEntry,
+  deleteDictionaryEntry,
+  // Keywords
+  getKeywords,
+  getKeywordById,
+  saveKeyword,
+  updateKeyword,
+  deleteKeyword
 };

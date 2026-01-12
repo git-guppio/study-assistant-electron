@@ -47,5 +47,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Summary
   dbGetSummary: () => ipcRenderer.invoke('db-get-summary'),
-  dbSaveSummary: (content) => ipcRenderer.invoke('db-save-summary', content)
+  dbSaveSummary: (content) => ipcRenderer.invoke('db-save-summary', content),
+
+  // Document Defaults
+  dbGetDocumentDefaults: () => ipcRenderer.invoke('db-get-document-defaults'),
+  dbUpdateDocumentDefaults: (updates) => ipcRenderer.invoke('db-update-document-defaults', updates),
+
+  // Custom Icon Colors
+  dbGetCustomIconColor: (iconId) => ipcRenderer.invoke('db-get-custom-icon-color', iconId),
+  dbGetAllCustomIconColors: () => ipcRenderer.invoke('db-get-all-custom-icon-colors'),
+  dbUpsertCustomIconColor: (iconId, color) => ipcRenderer.invoke('db-upsert-custom-icon-color', { iconId, color }),
+  dbDeleteCustomIconColor: (iconId) => ipcRenderer.invoke('db-delete-custom-icon-color', iconId),
+
+  // Custom Action Colors
+  dbGetCustomActionColor: (actionType) => ipcRenderer.invoke('db-get-custom-action-color', actionType),
+  dbGetAllCustomActionColors: () => ipcRenderer.invoke('db-get-all-custom-action-colors'),
+  dbUpsertCustomActionColor: (actionType, color) => ipcRenderer.invoke('db-upsert-custom-action-color', { actionType, color }),
+  dbDeleteCustomActionColor: (actionType) => ipcRenderer.invoke('db-delete-custom-action-color', actionType),
+
+  // Flashcards
+  dbGetFlashcards: () => ipcRenderer.invoke('db-get-flashcards'),
+  dbGetFlashcard: (id) => ipcRenderer.invoke('db-get-flashcard', id),
+  dbSaveFlashcard: (data) => ipcRenderer.invoke('db-save-flashcard', data),
+  dbUpdateFlashcard: (id, updates) => ipcRenderer.invoke('db-update-flashcard', { id, updates }),
+  dbDeleteFlashcard: (id) => ipcRenderer.invoke('db-delete-flashcard', id),
+
+  // Dictionary
+  dbGetDictionaryEntries: () => ipcRenderer.invoke('db-get-dictionary-entries'),
+  dbGetDictionaryEntry: (id) => ipcRenderer.invoke('db-get-dictionary-entry', id),
+  dbSaveDictionaryEntry: (data) => ipcRenderer.invoke('db-save-dictionary-entry', data),
+  dbUpdateDictionaryEntry: (id, updates) => ipcRenderer.invoke('db-update-dictionary-entry', { id, updates }),
+  dbDeleteDictionaryEntry: (id) => ipcRenderer.invoke('db-delete-dictionary-entry', id),
+
+  // Keywords
+  dbGetKeywords: () => ipcRenderer.invoke('db-get-keywords'),
+  dbGetKeyword: (id) => ipcRenderer.invoke('db-get-keyword', id),
+  dbSaveKeyword: (data) => ipcRenderer.invoke('db-save-keyword', data),
+  dbUpdateKeyword: (id, updates) => ipcRenderer.invoke('db-update-keyword', { id, updates }),
+  dbDeleteKeyword: (id) => ipcRenderer.invoke('db-delete-keyword', id)
 });

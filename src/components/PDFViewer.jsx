@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import ContextMenu from './ContextMenu';
 import { getSelectionRects, denormalizeRect, getGutterYPosition, findAnnotationAtPoint } from '../utils/coordinates';
+import { getEmojiForIcon, ANNOTATION_OPACITY } from '../constants/annotations';
 
 // Configurazione Worker - bundled localmente per supporto offline
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -12,11 +13,16 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 function PDFViewer({
   filePath,
   annotations = [],
-  onTextSelection,
-  onCreateHighlight,
-  onCreateOutline,
+  onAddNote,
+  onHighlight,
+  onCreateFlashcard,
+  onCreateDictionary,
+  onCreateKeyword,
   onDeleteAnnotation,
-  onGutterClick
+  onGutterClick,
+  documentDefaults = {},
+  customIconColors = {},
+  customActionColors = {}
 }) {
   const [pdfDoc, setPdfDoc] = useState(null);
   const [numPages, setNumPages] = useState(0);
@@ -218,37 +224,74 @@ function PDFViewer({
     setSelectionData(null);
   };
 
-  // Handler per "Aggiungi alle note"
-  const handleAddToNotes = () => {
-    if (selectionData && onTextSelection) {
-      onTextSelection(selectionData);
-    }
-    closeContextMenu();
-    window.getSelection().removeAllRanges();
-  };
-
-  // Handler per "Evidenzia"
-  const handleHighlight = (color) => {
-    if (selectionData && onCreateHighlight) {
-      onCreateHighlight({
+  // Handler per "Aggiungi Nota" (con icona e colore)
+  const handleAddNote = ({ iconId, color, opacity }) => {
+    if (selectionData && onAddNote) {
+      onAddNote({
         ...selectionData,
-        type: 'highlight',
+        type: 'note',
+        gutterIconId: iconId,
         color,
-        opacity: 0.35
+        opacity: opacity || ANNOTATION_OPACITY.note
       });
     }
     closeContextMenu();
     window.getSelection().removeAllRanges();
   };
 
-  // Handler per "Outline per nota"
-  const handleOutline = (color) => {
-    if (selectionData && onCreateOutline) {
-      onCreateOutline({
+  // Handler per "Evidenziatura" (solo colore, no gutter icon)
+  const handleHighlight = (color) => {
+    if (selectionData && onHighlight) {
+      onHighlight({
         ...selectionData,
-        type: 'outline',
+        type: 'highlight',
         color,
-        opacity: 0.08
+        opacity: ANNOTATION_OPACITY.highlight
+      });
+    }
+    closeContextMenu();
+    window.getSelection().removeAllRanges();
+  };
+
+  // Handler per "Crea Flashcard"
+  const handleCreateFlashcard = (color) => {
+    if (selectionData && onCreateFlashcard) {
+      onCreateFlashcard({
+        ...selectionData,
+        type: 'flashcard',
+        gutterIconId: 'flashcard',
+        color,
+        opacity: ANNOTATION_OPACITY.flashcard
+      });
+    }
+    closeContextMenu();
+    window.getSelection().removeAllRanges();
+  };
+
+  // Handler per "Inserisci in Dizionario"
+  const handleCreateDictionary = (color) => {
+    if (selectionData && onCreateDictionary) {
+      onCreateDictionary({
+        ...selectionData,
+        type: 'dictionary',
+        gutterIconId: 'dictionary',
+        color,
+        opacity: ANNOTATION_OPACITY.dictionary
+      });
+    }
+    closeContextMenu();
+    window.getSelection().removeAllRanges();
+  };
+
+  // Handler per "Parola Chiave"
+  const handleCreateKeyword = (color) => {
+    if (selectionData && onCreateKeyword) {
+      onCreateKeyword({
+        ...selectionData,
+        type: 'keyword',
+        gutterIconId: 'keyword',
+        color,
+        opacity: ANNOTATION_OPACITY.keyword
       });
     }
     closeContextMenu();
@@ -285,12 +328,14 @@ function PDFViewer({
       };
 
       if (annotation.type === 'highlight') {
+        // Evidenziatura pura - solo sfondo colorato
         style.backgroundColor = annotation.color;
-        style.opacity = annotation.opacity || 0.35;
+        style.opacity = annotation.opacity || ANNOTATION_OPACITY.highlight;
       } else {
-        // Outline - bordo completo inline per evitare bordi neri di default
+        // Note, flashcard, dictionary, keyword - bordo + sfondo leggero
         style.border = `2px solid ${annotation.color}`;
-        style.backgroundColor = `${annotation.color}10`; // 10% opacity fill
+        style.backgroundColor = annotation.color;
+        style.opacity = annotation.opacity || ANNOTATION_OPACITY.note;
       }
 
       return (
@@ -364,18 +409,19 @@ function PDFViewer({
           {/* Gutter Layer (icone a sinistra) */}
           <div ref={gutterLayerRef} className="pdf-gutter-layer">
             {viewport && pageAnnotations
-              .filter(a => a.noteId) // Solo annotazioni con nota collegata
+              .filter(a => a.gutterIconId) // Solo annotazioni con icona gutter
               .map(annotation => (
                 <div
                   key={`gutter-${annotation.id}`}
                   className={`gutter-icon ${annotation.type}`}
                   style={{
-                    top: `${getGutterYPosition(annotation, viewport.height)}px`
+                    top: `${getGutterYPosition(annotation, viewport.height)}px`,
+                    borderColor: annotation.color
                   }}
                   onClick={() => handleGutterIconClick(annotation)}
                   title={`Vai alla nota (pagina ${annotation.pageNumber})`}
                 >
-                  {annotation.type === 'outline' ? '📌' : '🖍️'}
+                  {getEmojiForIcon(annotation.gutterIconId)}
                 </div>
               ))}
           </div>
@@ -398,11 +444,16 @@ function PDFViewer({
         <ContextMenu
           type={contextMenuType}
           position={contextMenu}
-          onAddToNotes={handleAddToNotes}
+          onAddNote={handleAddNote}
           onHighlight={handleHighlight}
-          onOutline={handleOutline}
+          onCreateFlashcard={handleCreateFlashcard}
+          onCreateDictionary={handleCreateDictionary}
+          onCreateKeyword={handleCreateKeyword}
           onDelete={handleDelete}
           onClose={closeContextMenu}
+          documentDefaults={documentDefaults}
+          customIconColors={customIconColors}
+          customActionColors={customActionColors}
         />
       )}
     </div>

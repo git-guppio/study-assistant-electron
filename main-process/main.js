@@ -244,6 +244,112 @@ ipcMain.handle('db-save-summary', (event, content) => {
   return getDatabase().saveSummary(content);
 });
 
+// --- Document Defaults ---
+ipcMain.handle('db-get-document-defaults', () => {
+  return getDatabase().getDocumentDefaults();
+});
+
+ipcMain.handle('db-update-document-defaults', (event, updates) => {
+  return getDatabase().updateDocumentDefaults(updates);
+});
+
+// --- Custom Icon Colors ---
+ipcMain.handle('db-get-custom-icon-color', (event, iconId) => {
+  return getDatabase().getCustomIconColor(iconId);
+});
+
+ipcMain.handle('db-get-all-custom-icon-colors', () => {
+  return getDatabase().getAllCustomIconColors();
+});
+
+ipcMain.handle('db-upsert-custom-icon-color', (event, { iconId, color }) => {
+  return getDatabase().upsertCustomIconColor(iconId, color);
+});
+
+ipcMain.handle('db-delete-custom-icon-color', (event, iconId) => {
+  return getDatabase().deleteCustomIconColor(iconId);
+});
+
+// --- Custom Action Colors ---
+ipcMain.handle('db-get-custom-action-color', (event, actionType) => {
+  return getDatabase().getCustomActionColor(actionType);
+});
+
+ipcMain.handle('db-get-all-custom-action-colors', () => {
+  return getDatabase().getAllCustomActionColors();
+});
+
+ipcMain.handle('db-upsert-custom-action-color', (event, { actionType, color }) => {
+  return getDatabase().upsertCustomActionColor(actionType, color);
+});
+
+ipcMain.handle('db-delete-custom-action-color', (event, actionType) => {
+  return getDatabase().deleteCustomActionColor(actionType);
+});
+
+// --- Flashcards ---
+ipcMain.handle('db-get-flashcards', () => {
+  return getDatabase().getFlashcards();
+});
+
+ipcMain.handle('db-get-flashcard', (event, id) => {
+  return getDatabase().getFlashcardById(id);
+});
+
+ipcMain.handle('db-save-flashcard', (event, data) => {
+  return getDatabase().saveFlashcard(data);
+});
+
+ipcMain.handle('db-update-flashcard', (event, { id, updates }) => {
+  return getDatabase().updateFlashcard(id, updates);
+});
+
+ipcMain.handle('db-delete-flashcard', (event, id) => {
+  return getDatabase().deleteFlashcard(id);
+});
+
+// --- Dictionary ---
+ipcMain.handle('db-get-dictionary-entries', () => {
+  return getDatabase().getDictionaryEntries();
+});
+
+ipcMain.handle('db-get-dictionary-entry', (event, id) => {
+  return getDatabase().getDictionaryEntryById(id);
+});
+
+ipcMain.handle('db-save-dictionary-entry', (event, data) => {
+  return getDatabase().saveDictionaryEntry(data);
+});
+
+ipcMain.handle('db-update-dictionary-entry', (event, { id, updates }) => {
+  return getDatabase().updateDictionaryEntry(id, updates);
+});
+
+ipcMain.handle('db-delete-dictionary-entry', (event, id) => {
+  return getDatabase().deleteDictionaryEntry(id);
+});
+
+// --- Keywords ---
+ipcMain.handle('db-get-keywords', () => {
+  return getDatabase().getKeywords();
+});
+
+ipcMain.handle('db-get-keyword', (event, id) => {
+  return getDatabase().getKeywordById(id);
+});
+
+ipcMain.handle('db-save-keyword', (event, data) => {
+  return getDatabase().saveKeyword(data);
+});
+
+ipcMain.handle('db-update-keyword', (event, { id, updates }) => {
+  return getDatabase().updateKeyword(id, updates);
+});
+
+ipcMain.handle('db-delete-keyword', (event, id) => {
+  return getDatabase().deleteKeyword(id);
+});
+
 // Chiudi database quando l'app si chiude
 app.on('before-quit', () => {
   getDatabase().closeDatabase();

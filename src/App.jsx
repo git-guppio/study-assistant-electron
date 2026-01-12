@@ -9,9 +9,13 @@ function App() {
   const [bookInfo, setBookInfo] = useState(null);
   const [activeTab, setActiveTab] = useState('notes');
   const [pdfPath, setPdfPath] = useState(null);
-  const [selectedText, setSelectedText] = useState(null);
   const [annotations, setAnnotations] = useState([]);
   const [dbReady, setDbReady] = useState(false);
+
+  // Document defaults and custom colors
+  const [documentDefaults, setDocumentDefaults] = useState({});
+  const [customIconColors, setCustomIconColors] = useState({});
+  const [customActionColors, setCustomActionColors] = useState({});
 
   // Ref per NotesEditor (per scroll-to-note)
   const notesEditorRef = useRef(null);
@@ -48,36 +52,58 @@ function App() {
     loadBookInfo();
   }, []);
 
-  // Carica annotazioni quando il database e' pronto
+  // Carica annotazioni, defaults e colori custom quando il database e' pronto
   useEffect(() => {
-    async function loadAnnotations() {
+    async function loadData() {
       const db = getDatabase();
       if (db) {
         try {
+          // Carica annotazioni
           const savedAnnotations = await db.getAnnotations();
           setAnnotations(savedAnnotations);
           console.log('📍 Annotations loaded:', savedAnnotations.length);
+
+          // Carica document defaults
+          const defaults = await db.getDocumentDefaults();
+          if (defaults) {
+            setDocumentDefaults(defaults);
+            console.log('⚙️ Document defaults loaded:', defaults);
+          }
+
+          // Carica colori custom icone
+          const iconColors = await db.getAllCustomIconColors();
+          if (iconColors && iconColors.length > 0) {
+            const iconColorsMap = {};
+            iconColors.forEach(({ iconId, color }) => {
+              iconColorsMap[iconId] = color;
+            });
+            setCustomIconColors(iconColorsMap);
+            console.log('🎨 Custom icon colors loaded:', iconColorsMap);
+          }
+
+          // Carica colori custom azioni
+          const actionColors = await db.getAllCustomActionColors();
+          if (actionColors && actionColors.length > 0) {
+            const actionColorsMap = {};
+            actionColors.forEach(({ actionType, color }) => {
+              actionColorsMap[actionType] = color;
+            });
+            setCustomActionColors(actionColorsMap);
+            console.log('🎨 Custom action colors loaded:', actionColorsMap);
+          }
         } catch (error) {
-          console.error('Error loading annotations:', error);
+          console.error('Error loading data:', error);
         }
       }
     }
 
     if (dbReady) {
-      loadAnnotations();
+      loadData();
     }
   }, [dbReady]);
 
-  // Gestisce la selezione di testo nel PDF (per "Aggiungi alle note")
-  const handleTextSelection = (selection) => {
-    setSelectedText(selection);
-    if (selection && selection.text) {
-      setActiveTab('notes');
-    }
-  };
-
-  // Crea un Highlight (senza nota collegata)
-  const handleCreateHighlight = async (annotationData) => {
+  // Crea un Highlight (senza nota collegata, no gutter icon)
+  const handleHighlight = async (annotationData) => {
     const db = getDatabase();
     if (!db) return;
 
@@ -87,8 +113,9 @@ function App() {
         pageNumber: annotationData.pageNumber,
         text: annotationData.text,
         color: annotationData.color,
-        opacity: annotationData.opacity || 0.35,
+        opacity: annotationData.opacity,
         rects: annotationData.rects,
+        gutterIconId: null,
         noteId: null
       });
 
@@ -99,8 +126,8 @@ function App() {
     }
   };
 
-  // Crea un Outline + Nota collegata automaticamente
-  const handleCreateOutline = async (annotationData) => {
+  // Crea una Nota con icona + outline
+  const handleAddNote = async (annotationData) => {
     const db = getDatabase();
     if (!db) return;
 
@@ -119,14 +146,15 @@ function App() {
         }
       });
 
-      // 2. Crea l'outline con riferimento alla nota
+      // 2. Crea l'annotazione con riferimento alla nota
       const newAnnotation = await db.saveAnnotation({
-        type: 'outline',
+        type: 'note',
         pageNumber: annotationData.pageNumber,
         text: annotationData.text,
         color: annotationData.color,
-        opacity: annotationData.opacity || 0.08,
+        opacity: annotationData.opacity,
         rects: annotationData.rects,
+        gutterIconId: annotationData.gutterIconId,
         noteId: newNote.id
       });
 
@@ -135,14 +163,125 @@ function App() {
         annotationId: newAnnotation.id
       });
 
+      // 4. Salva l'ultima icona usata nei document defaults
+      await db.updateDocumentDefaults({ lastNoteIconId: annotationData.gutterIconId });
+      setDocumentDefaults(prev => ({ ...prev, lastNoteIconId: annotationData.gutterIconId }));
+
       setAnnotations(prev => [...prev, newAnnotation]);
 
-      // 4. Switch alla tab note
+      // 5. Switch alla tab note
       setActiveTab('notes');
 
-      console.log('📌 Outline + Note created:', newAnnotation.id, newNote.id);
+      console.log('📝 Note created:', newAnnotation.id, newNote.id);
     } catch (error) {
-      console.error('Error creating outline:', error);
+      console.error('Error creating note:', error);
+    }
+  };
+
+  // Crea una Flashcard
+  const handleCreateFlashcard = async (annotationData) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      // 1. Crea la flashcard nel database
+      const newFlashcard = await db.saveFlashcard({
+        front: annotationData.text,
+        back: '', // L'utente compilera' dopo
+        pageNumber: annotationData.pageNumber
+      });
+
+      // 2. Crea l'annotazione con riferimento alla flashcard
+      const newAnnotation = await db.saveAnnotation({
+        type: 'flashcard',
+        pageNumber: annotationData.pageNumber,
+        text: annotationData.text,
+        color: annotationData.color,
+        opacity: annotationData.opacity,
+        rects: annotationData.rects,
+        gutterIconId: 'flashcard',
+        noteId: null // Flashcard non ha nota collegata, ha flashcardId
+      });
+
+      setAnnotations(prev => [...prev, newAnnotation]);
+
+      // 3. Switch alla tab flashcards (quando sara' implementata)
+      // setActiveTab('flashcards');
+
+      console.log('🧠 Flashcard created:', newFlashcard.id, newAnnotation.id);
+    } catch (error) {
+      console.error('Error creating flashcard:', error);
+    }
+  };
+
+  // Crea una voce Dizionario
+  const handleCreateDictionary = async (annotationData) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      // 1. Crea la voce dizionario
+      const newEntry = await db.saveDictionaryEntry({
+        term: annotationData.text,
+        definition: '', // L'utente compilera' dopo
+        pageNumber: annotationData.pageNumber
+      });
+
+      // 2. Crea l'annotazione
+      const newAnnotation = await db.saveAnnotation({
+        type: 'dictionary',
+        pageNumber: annotationData.pageNumber,
+        text: annotationData.text,
+        color: annotationData.color,
+        opacity: annotationData.opacity,
+        rects: annotationData.rects,
+        gutterIconId: 'dictionary',
+        noteId: null
+      });
+
+      setAnnotations(prev => [...prev, newAnnotation]);
+
+      // 3. Switch alla tab dizionario (quando sara' implementata)
+      // setActiveTab('dictionary');
+
+      console.log('📖 Dictionary entry created:', newEntry.id, newAnnotation.id);
+    } catch (error) {
+      console.error('Error creating dictionary entry:', error);
+    }
+  };
+
+  // Crea una Keyword
+  const handleCreateKeyword = async (annotationData) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      // 1. Crea la keyword
+      const newKeyword = await db.saveKeyword({
+        term: annotationData.text,
+        pageNumber: annotationData.pageNumber
+      });
+
+      // 2. Crea l'annotazione
+      const newAnnotation = await db.saveAnnotation({
+        type: 'keyword',
+        pageNumber: annotationData.pageNumber,
+        text: annotationData.text,
+        color: annotationData.color,
+        opacity: annotationData.opacity,
+        rects: annotationData.rects,
+        gutterIconId: 'keyword',
+        noteId: null
+      });
+
+      setAnnotations(prev => [...prev, newAnnotation]);
+
+      // 3. Switch alla tab keywords (quando sara' implementata)
+      // setActiveTab('keywords');
+
+      console.log('🔑 Keyword created:', newKeyword.id, newAnnotation.id);
+    } catch (error) {
+      console.error('Error creating keyword:', error);
     }
   };
 
@@ -179,7 +318,6 @@ function App() {
         return (
           <NotesEditor
             ref={notesEditorRef}
-            selectedText={selectedText}
             bookId={bookInfo?.bookId}
           />
         );
@@ -251,11 +389,16 @@ function App() {
               <PDFViewer
                 filePath={pdfPath}
                 annotations={annotations}
-                onTextSelection={handleTextSelection}
-                onCreateHighlight={handleCreateHighlight}
-                onCreateOutline={handleCreateOutline}
+                onAddNote={handleAddNote}
+                onHighlight={handleHighlight}
+                onCreateFlashcard={handleCreateFlashcard}
+                onCreateDictionary={handleCreateDictionary}
+                onCreateKeyword={handleCreateKeyword}
                 onDeleteAnnotation={handleDeleteAnnotation}
                 onGutterClick={handleGutterClick}
+                documentDefaults={documentDefaults}
+                customIconColors={customIconColors}
+                customActionColors={customActionColors}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-500">
@@ -319,11 +462,7 @@ function App() {
           )}
         </div>
         <div>
-          {selectedText && (
-            <span className="text-blue-600">
-              ✓ Testo selezionato: {selectedText.text.substring(0, 30)}...
-            </span>
-          )}
+          <span>{annotations.length} annotazioni</span>
         </div>
       </footer>
     </div>

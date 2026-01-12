@@ -1,0 +1,174 @@
+# Piano: Sincronizzazione Bidirezionale PDF-Note
+
+## Obiettivo
+Creare un sistema di sincronizzazione bidirezionale tra annotazioni PDF (outline) e blocchi nota in TipTap. Eliminando da un lato, si elimina anche dall'altro.
+
+---
+
+## Architettura
+
+```
+PDFViewer                    App.jsx                     NotesEditor
+    │                           │                             │
+    │  onCreatePdfNote(data)    │                             │
+    ├──────────────────────────►│                             │
+    │                           │  insertPdfNoteBlock(note)   │
+    │                           ├────────────────────────────►│
+    │                           │                             │
+    │                           │  onDeletePdfNote(id)        │
+    │                           │◄────────────────────────────┤
+    │  remove outline           │                             │
+    │◄──────────────────────────┤                             │
+    │                           │                             │
+    │  onDeleteAnnotation(id)   │                             │
+    ├──────────────────────────►│                             │
+    │                           │  removePdfNoteBlock(id)     │
+    │                           ├────────────────────────────►│
+```
+
+---
+
+## File da Creare
+
+### 1. `src/extensions/PdfNoteBlock.js`
+Custom TipTap Node Extension con:
+- Attributi: `noteId`, `annotationId`, `pageNumber`, `selectionText`, `color`, `comment`
+- `ReactNodeViewRenderer` per rendering React
+- Draggable come blocco unico
+
+### 2. `src/components/PdfNoteBlockComponent.jsx`
+Componente React renderizzato in TipTap:
+```
+┌─────────────────────────────────────────────────┐
+│ ● Colore   Pag. 5   │ [Vai al PDF] │ [✕]       │ ← Header (non editabile)
+├─────────────────────────────────────────────────┤
+│ "Testo selezionato dal PDF..."                  │ ← Citazione (read-only)
+├─────────────────────────────────────────────────┤
+│ [Area commento editabile]                       │ ← Commento (editabile)
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## File da Modificare
+
+### 3. `src/components/ContextMenu.jsx`
+- Aggiungere sottomenu colori per "Aggiungi alle note"
+- 6 colori preset: Viola, Verde, Arancio, Blu, Rosso, Giallo
+- Callback `onAddToNotes(color)` con colore selezionato
+
+### 4. `src/components/NotesEditor.jsx`
+- Registrare estensione `PdfNoteBlock`
+- Esporre via ref:
+  - `insertPdfNoteBlock(noteData)` - inserisce blocco
+  - `removePdfNoteBlock(noteId)` - rimuove blocco
+- Passare callback al componente via `extension.options`
+
+### 5. `src/components/PDFViewer.jsx`
+- Aggiornare `handleAddToNotes(color)` per ricevere colore
+- Aggiungere ref method `flashOutline(annotationId, pageNumber)`
+- Stato `flashingAnnotationId` per animazione lampeggio
+
+### 6. `src/App.jsx`
+- Nuovo handler `handleCreatePdfNote({ text, pageNumber, rects, color })`:
+  1. Salva nota in DB
+  2. Salva annotation (outline) in DB con `noteId`
+  3. Aggiorna nota con `annotationId`
+  4. Chiama `notesEditorRef.insertPdfNoteBlock()`
+  5. Switch a tab notes
+- Aggiornare `handleDeleteAnnotation()` per sync bidirezionale
+- Nuovo handler `handleDeletePdfNote(noteId, annotationId)`
+- Nuovo handler `handleNavigateToPdf({ annotationId, pageNumber })`
+- Aggiungere `pdfViewerRef`
+
+### 7. `src/index.css`
+Nuovi stili:
+- `.pdf-note-block` - container principale
+- `.pdf-note-block-header` - header con bordo colorato
+- `.pdf-note-block-quote` - sezione citazione
+- `.pdf-note-block-comment` - area commento
+- `.annotation-rect.outline.flashing` - animazione flash
+- `@keyframes outlineFlash` - 5 lampeggi in 2.5s
+
+---
+
+## Palette Colori
+- I colori devono essere coerenti con quelli utilizzati per evidenziare le note nel testo pdf
+
+```javascript
+const NOTE_COLORS = [
+  { color: '#8b5cf6', name: 'Viola' },
+  { color: '#22c55e', name: 'Verde' },
+  { color: '#f97316', name: 'Arancio' },
+  { color: '#3b82f6', name: 'Blu' },
+  { color: '#ef4444', name: 'Rosso' },
+  { color: '#eab308', name: 'Giallo' },
+];
+```
+
+---
+
+## Flussi Principali
+
+### Creazione Nota
+1. Utente seleziona testo in PDF
+2. Click destro → Menu contestuale
+3. Hover "Aggiungi alle note" → Sottomenu colori
+4. Click su colore
+5. `PDFViewer.handleAddToNotes(color)` → `App.handleCreatePdfNote()`
+6. Crea record `notes` e `annotations` in SQLite (linkati)
+7. Inserisce `PdfNoteBlock` in TipTap
+8. Renderizza outline su PDF
+
+### Eliminazione da TipTap
+1. Click pulsante ✕ nel header del blocco
+2. `PdfNoteBlockComponent.handleDelete()` → `App.handleDeletePdfNote()`
+3. Elimina annotation da DB
+4. Elimina nota da DB
+5. Rimuove blocco da TipTap (già fatto)
+6. Outline scompare dal PDF (state update)
+
+### Eliminazione da PDF
+1. Click destro su outline → "Elimina annotazione"
+2. `PDFViewer` → `App.handleDeleteAnnotation()`
+3. Trova `noteId` dall'annotation
+4. Chiama `notesEditorRef.removePdfNoteBlock(noteId)`
+5. Elimina nota da DB
+6. Elimina annotation da DB
+7. Blocco scompare da TipTap, outline da PDF
+
+### Navigazione Nota → PDF
+1. Click "Vai al PDF" nel blocco
+2. `App.handleNavigateToPdf({ annotationId, pageNumber })`
+3. `pdfViewerRef.flashOutline(annotationId, pageNumber)`
+4. PDF naviga alla pagina
+5. Outline lampeggia 5 volte in 2.5s
+
+### Navigazione PDF → Nota
+1. Click su icona gutter nel PDF
+2. `App.handleGutterClick(annotation)`
+3. Switch a tab "notes"
+4. `notesEditorRef.scrollToNote(noteId)`
+5. Blocco si evidenzia brevemente
+
+---
+
+## Sequenza Implementazione
+
+1. **Estensione TipTap** - `PdfNoteBlock.js` + `PdfNoteBlockComponent.jsx`
+2. **CSS** - Stili per blocco nota e animazione flash
+3. **Context Menu** - Sottomenu colori per "Aggiungi alle note"
+4. **App.jsx** - Handler per creazione, eliminazione, navigazione
+5. **NotesEditor** - Registrazione estensione + metodi ref
+6. **PDFViewer** - Flash animation + aggiornamento callback
+
+---
+
+## Verifica Finale
+
+1. **Test creazione**: Seleziona testo → scegli colore → verifica outline + blocco + DB
+2. **Test eliminazione da TipTap**: Elimina blocco → verifica outline rimosso + DB vuoto
+3. **Test eliminazione da PDF**: Elimina outline → verifica blocco rimosso + DB vuoto
+4. **Test navigazione Nota→PDF**: Click "Vai al PDF" → verifica scroll + flash
+5. **Test navigazione PDF→Nota**: Click gutter → verifica scroll + highlight
+6. **Test persistenza**: Riavvia app → verifica tutto caricato correttamente

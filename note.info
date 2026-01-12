@@ -1,0 +1,174 @@
+Per ottenere la sincronizzazione bidirezionale, non puoi trattare le note come semplice testo dentro TipTap. Devi trasformare ogni nota in un Node Extension personalizzato.
+
+In pratica, ogni nota in TipTap deve essere un blocco di codice HTML che possiede un attributo data-id (collegato all'ID della nota nel database SQLite).
+
+Ecco la strategia per implementare questa sincronizzazione:
+
+1. Creazione del Custom Node in TipTap
+Devi creare un'estensione per TipTap che definisca il blocco "Nota". Questo blocco sarà trattato come un'entità unica: se viene cancellato nell'editor, puoi scatenare un evento per rimuovere il contorno nel PDF, e viceversa.
+
+JavaScript
+
+import { Node, mergeAttributes } from '@tiptap/core'
+
+const PdfNoteBlock = Node.create({
+  name: 'pdfNote',
+  group: 'block',
+  content: 'inline*', // Permette testo all'interno della nota
+  draggable: true,
+
+  addAttributes() {
+    return {
+      noteId: {
+        default: null,
+        parseHTML: element => element.getAttribute('data-note-id'),
+        renderHTML: attributes => ({ 'data-note-id': attributes.noteId }),
+      },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-note-id]' }]
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { class: 'pdf-note-editor-block' }), 0]
+  },
+})
+
+
+2. Sincronizzazione "PDF -> TipTap" (Rimozione automatica)
+Quando rimuovi l'outline dal PDF (o elimini la nota dal database), devi istruire l'editor TipTap a cercare il blocco con quel noteId e rimuoverlo.
+
+In Electron, dopo che la cancellazione su SQLite ha avuto successo, invierai un messaggio all'editor:
+
+JavaScript
+
+// Funzione per rimuovere la nota dall'editor quando viene cancellata dal PDF
+function removeNoteFromEditor(editor, noteId) {
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'pdfNote' && node.attrs.noteId === noteId) {
+      // Rimuove il blocco intero
+      editor.commands.deleteRange({ from: pos, to: pos + node.nodeSize });
+    }
+  });
+}
+
+
+3. Sincronizzazione "TipTap -> PDF"
+Grazie agli Update Listeners di TipTap, puoi monitorare se un blocco nota è stato cancellato manualmente dall'utente nell'editor (ad esempio premendo Backspace sul blocco).
+
+JavaScript
+
+// Nella configurazione di TipTap
+onUpdate({ editor }) {
+  const currentNoteIds = [];
+  editor.state.doc.descendants(node => {
+    if (node.type.name === 'pdfNote') {
+      currentNoteIds.push(node.attrs.noteId);
+    }
+  });
+
+  // Confronta currentNoteIds con quelli che avevi prima. 
+  // Se uno manca, chiama la funzione per rimuovere l'outline nel PDF e nel DB.
+  checkDeletedNotes(currentNoteIds);
+}
+
+Perché questo approccio è il migliore:
+Integrità del Blocco: L'utente non può cancellare solo metà della nota accidentalmente; cancellando il blocco, l'azione è netta.
+
+Identificazione Univoca: Usando data-note-id, il legame con SQLite è atomico. Non importa se sposti la nota più in alto o più in basso nell'editor, il link rimane salvo.
+
+Stile Coerente: Puoi usare il CSS per far apparire la nota nell'editor con un bordo viola, richiamando visivamente il contorno che l'utente vede nel PDF.
+
+Questa specifica definisce il protocollo di sincronizzazione tra il visualizzatore PDF e l'editor di testo TipTap. L'obiettivo è creare un legame atomico: se il blocco nota scompare dall'editor, l'outline scompare dal PDF e il record viene eliminato dal DB (e viceversa).
+
+1. Architettura dei Componenti e Flusso Dati
+Il sistema si basa su un ID Univoco (noteId) che funge da chiave primaria in SQLite e da attributo HTML in entrambi i layer della UI.
+
+I tre pilastri della sincronizzazione:
+SQLite: Fonte della verità. Memorizza noteId, coords, pageNumber e contentHTML.
+
+PDF Highlights Layer: Renderizza i rettangoli con data-note-id.
+
+TipTap Custom Extension: Renderizza i blocchi nota con data-note-id.
+
+2. Specifiche Tecnica: TipTap Custom Node
+L'editor non deve gestire le note come testo semplice, ma come un Node dedicato chiamato PdfNoteBlock.
+
+Caratteristiche del Nodo:
+Contenitore: Un div con classe .pdf-note-block.
+
+Attributi: Deve obbligatoriamente avere l'attributo noteId.
+
+Comportamento: Deve essere trattato come un blocco unico (Select-on-click).
+
+Elementi Extra: Un piccolo header non editabile con l'icona del colore scelto e un pulsante "Go to PDF".
+
+3. Protocollo di Sincronizzazione Bidirezionale
+Caso A: Rimozione da Editor → PDF
+Quando l'utente cancella un blocco nota in TipTap (Backspace o Delete):
+
+Intercettazione: L'estensione TipTap rileva la rimozione del nodo tramite l'hook onUpdate.
+
+Verifica: Il sistema confronta la lista degli ID presenti nell'editor con la lista salvata nello stato dell'applicazione.
+
+Azione: Se un noteId manca:
+
+Invia richiesta al Main Process (Electron) per eliminare il record in SQLite.
+
+Notifica il PDFViewer di rimuovere l'outline con quell'ID dal HighlightsLayer.
+
+Caso B: Rimozione da PDF → Editor
+Quando l'utente clicca sul marcatore laterale o sull'outline e sceglie "Elimina":
+
+Azione: Il PDFViewer invia il noteId alla funzione di eliminazione.
+
+Database: Il record viene rimosso da SQLite.
+
+Editor: Viene chiamato un comando TipTap personalizzato (deleteNoteBlock(noteId)) che scansiona il documento, trova il nodo corrispondente e lo rimuove chirurgicamente.
+
+4. Implementazione del "Link Bidirezionale"
+Per permettere il salto tra i due mondi, implementiamo i seguenti trigger:
+
+Link Editor → PDF (Jump to Location)
+All'interno del blocco nota in TipTap, inserire un evento click:
+
+Azione: Invia pageNumber e coords al PDFViewer.
+
+Effetto: Il PDF Viewer cambia pagina (se necessario) e usa element.scrollIntoView() sulle coordinate dell'outline, aggiungendo un effetto di lampeggiamento (flash) temporaneo per attirare l'occhio.
+
+Link PDF → Editor (Focus Note)
+Al click sull'outline viola nel PDF:
+
+Azione: Invia il noteId all'editor.
+
+Effetto: L'editor esegue uno scroll fino al blocco PdfNoteBlock corrispondente e lo evidenzia visivamente.
+
+5. Layer e Stili CSS Necessari
+HighlightsLayer (nel PDF)
+CSS
+
+.annotation-outline[data-note-id] {
+  border: 2px solid var(--note-color);
+  background-color: transparent;
+  pointer-events: auto; /* Cliccabile per il link */
+}
+TipTap Editor (Note Block)
+CSS
+
+.pdf-note-block {
+  border-left: 4px solid var(--note-color);
+  background: #f9fafb;
+  margin: 1rem 0;
+  padding: 0.5rem;
+  border-radius: 0 4px 4px 0;
+}
+6. Gestione della scelta colore
+Il sistema deve supportare una palette dinamica:
+
+Al momento della creazione, l'utente sceglie un colore (es. Viola, Verde, Arancio).
+
+Il colore viene salvato in SQLite come stringa Hex.
+
+Il valore viene passato come CSS Variable (--note-color) sia al layer del PDF che al blocco nell'editor, garantendo coerenza cromatica istantanea.

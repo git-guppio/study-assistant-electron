@@ -71,7 +71,7 @@ class DatabaseManager {
     return await window.electronAPI.dbDeleteNote(id);
   }
 
-  // --- ANNOTATIONS (Highlights + Outlines) ---
+  // --- ANNOTATIONS (Highlights + Notes + Actions) ---
 
   async getAnnotations() {
     if (!this.initialized) return [];
@@ -94,9 +94,10 @@ class DatabaseManager {
       type: annotation.type || 'highlight',
       pageNumber: annotation.pageNumber,
       text: annotation.text || null,
-      color: annotation.color || (annotation.type === 'outline' ? '#8b5cf6' : '#ffff00'),
-      opacity: annotation.opacity || (annotation.type === 'outline' ? 0.08 : 0.35),
+      color: annotation.color || '#eab308',
+      opacity: annotation.opacity || 0.35,
       rects: annotation.rects || [],
+      gutterIconId: annotation.gutterIconId || null,
       noteId: annotation.noteId || null
     });
   }
@@ -146,6 +147,143 @@ class DatabaseManager {
   async saveSummary(content) {
     if (!this.initialized) return null;
     return await window.electronAPI.dbSaveSummary(content);
+  }
+
+  // --- DOCUMENT DEFAULTS ---
+
+  async getDocumentDefaults() {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetDocumentDefaults();
+  }
+
+  async updateDocumentDefaults(updates) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpdateDocumentDefaults(updates);
+  }
+
+  // --- CUSTOM ICON COLORS ---
+
+  async getCustomIconColor(iconId) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetCustomIconColor(iconId);
+  }
+
+  async getAllCustomIconColors() {
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetAllCustomIconColors();
+  }
+
+  async upsertCustomIconColor(iconId, color) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpsertCustomIconColor(iconId, color);
+  }
+
+  async deleteCustomIconColor(iconId) {
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteCustomIconColor(iconId);
+  }
+
+  // --- CUSTOM ACTION COLORS ---
+
+  async getCustomActionColor(actionType) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetCustomActionColor(actionType);
+  }
+
+  async getAllCustomActionColors() {
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetAllCustomActionColors();
+  }
+
+  async upsertCustomActionColor(actionType, color) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpsertCustomActionColor(actionType, color);
+  }
+
+  async deleteCustomActionColor(actionType) {
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteCustomActionColor(actionType);
+  }
+
+  // --- FLASHCARDS ---
+
+  async getFlashcards() {
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetFlashcards();
+  }
+
+  async getFlashcardById(id) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetFlashcard(id);
+  }
+
+  async saveFlashcard(data) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbSaveFlashcard(data);
+  }
+
+  async updateFlashcard(id, updates) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpdateFlashcard(id, updates);
+  }
+
+  async deleteFlashcard(id) {
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteFlashcard(id);
+  }
+
+  // --- DICTIONARY ---
+
+  async getDictionaryEntries() {
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetDictionaryEntries();
+  }
+
+  async getDictionaryEntryById(id) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetDictionaryEntry(id);
+  }
+
+  async saveDictionaryEntry(data) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbSaveDictionaryEntry(data);
+  }
+
+  async updateDictionaryEntry(id, updates) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpdateDictionaryEntry(id, updates);
+  }
+
+  async deleteDictionaryEntry(id) {
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteDictionaryEntry(id);
+  }
+
+  // --- KEYWORDS ---
+
+  async getKeywords() {
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetKeywords();
+  }
+
+  async getKeywordById(id) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetKeyword(id);
+  }
+
+  async saveKeyword(data) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbSaveKeyword(data);
+  }
+
+  async updateKeyword(id, updates) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpdateKeyword(id, updates);
+  }
+
+  async deleteKeyword(id) {
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteKeyword(id);
   }
 }
 
