@@ -1,19 +1,13 @@
-import React, { useEffect, useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, forwardRef, useImperativeHandle } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
+import { PdfNoteBlock } from '../extensions/PdfNoteBlock';
 import { getDatabase } from '../database/db';
 
-const NotesEditor = forwardRef(function NotesEditor({ selectedText, bookId }, ref) {
-  const [notes, setNotes] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [highlightedNoteId, setHighlightedNoteId] = useState(null);
-
-  // Refs per scroll-to-note
-  const noteRefs = useRef({});
-  const notesListRef = useRef(null);
+const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteNote, onNavigateToPdf }, ref) {
 
   const editor = useEditor({
     extensions: [
@@ -25,6 +19,10 @@ const NotesEditor = forwardRef(function NotesEditor({ selectedText, bookId }, re
       Highlight.configure({
         multicolor: true,
       }),
+      PdfNoteBlock.configure({
+        onDeleteNote: onDeleteNote,
+        onNavigateToPdf: onNavigateToPdf,
+      }),
     ],
     content: '<p>Inizia a scrivere le tue note qui...</p>',
     editorProps: {
@@ -34,95 +32,128 @@ const NotesEditor = forwardRef(function NotesEditor({ selectedText, bookId }, re
     },
   });
 
-  // Esponi scrollToNote via ref
+  // Esponi metodi via ref
   useImperativeHandle(ref, () => ({
-    scrollToNote: (noteId) => {
-      const noteElement = noteRefs.current[noteId];
-      if (noteElement) {
-        noteElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setHighlightedNoteId(noteId);
-        // Rimuovi highlight dopo 2 secondi
-        setTimeout(() => setHighlightedNoteId(null), 2000);
-      }
-    }
-  }), []);
+    // Inserisce un nuovo blocco nota
+    insertPdfNoteBlock: (noteData) => {
+      if (!editor) return;
 
-  // Carica note esistenti
-  useEffect(() => {
-    loadNotes();
-  }, [bookId]);
-
-  // Inserisci automaticamente il testo selezionato dal PDF
-  useEffect(() => {
-    if (selectedText && selectedText.text && editor) {
-      // Aggiungi il testo selezionato come citazione
       editor
         .chain()
         .focus()
-        .insertContent([
-          {
-            type: 'blockquote',
-            content: [
-              {
-                type: 'paragraph',
-                content: [
-                  {
-                    type: 'text',
-                    text: selectedText.text,
-                  },
-                ],
-              },
-            ],
+        .insertContent({
+          type: 'pdfNoteBlock',
+          attrs: {
+            noteId: noteData.id,
+            annotationId: noteData.annotationId,
+            pageNumber: noteData.pageNumber,
+            selectionText: noteData.selectionText,
+            color: noteData.color,
+            gutterIconId: noteData.gutterIconId,
+            comment: noteData.comment || '',
           },
-          {
-            type: 'paragraph',
-            content: [
-              {
-                type: 'text',
-                text: `[Pagina ${selectedText.pageNumber}]`,
-              },
-            ],
-          },
-          {
-            type: 'paragraph',
-          },
-        ])
+        })
         .run();
+
+      console.log('📝 Note block inserted:', noteData.id);
+    },
+
+    // Rimuove un blocco nota
+    removePdfNoteBlock: (noteId) => {
+      if (!editor) return;
+
+      const { state, view } = editor;
+      const { doc, tr } = state;
+      let found = false;
+
+      doc.descendants((node, pos) => {
+        if (node.type.name === 'pdfNoteBlock' && node.attrs.noteId === noteId) {
+          // Usa deleteRange invece di setTextSelection per nodi atom
+          const transaction = tr.delete(pos, pos + node.nodeSize);
+          view.dispatch(transaction);
+          found = true;
+          console.log('🗑️ Note block removed:', noteId);
+          return false; // Stop iteration
+        }
+      });
+
+      if (!found) {
+        console.warn('⚠️ Note block not found in editor:', noteId);
+      }
+    },
+
+    // Scrolla a un blocco nota
+    scrollToBlock: (noteId) => {
+      // TODO: Implementare scroll al blocco quando TipTap supporta meglio il NodeView scrolling
+      console.log('🔍 Scroll to note:', noteId);
     }
-  }, [selectedText, editor]);
+  }), [editor]);
+
+  // Carica note esistenti e le inserisce come blocchi
+  useEffect(() => {
+    if (editor && dbReady) {
+      console.log('📥 Editor AND DB ready, loading notes...', { bookId, dbReady });
+      loadNotes();
+    } else {
+      console.log('⏳ Waiting for editor and DB...', { editor: !!editor, dbReady });
+    }
+  }, [editor, dbReady]);
+
 
   const loadNotes = async () => {
     const db = getDatabase();
-    if (db) {
+    if (!db || !editor) {
+      console.log('⚠️ LoadNotes skipped - db or editor not ready', { db: !!db, editor: !!editor });
+      return;
+    }
+
+    try {
+      console.log('📥 Loading notes from database...');
       const savedNotes = await db.getNotes();
-      setNotes(savedNotes);
+      console.log('📥 Retrieved notes:', savedNotes.length, savedNotes);
 
-      // Se ci sono note salvate, carica l'ultima
-      if (savedNotes.length > 0 && editor) {
-        editor.commands.setContent(savedNotes[savedNotes.length - 1].content);
+      // Carica le note come blocchi TipTap
+      if (savedNotes.length > 0) {
+        // Costruisci un array di tutti i blocchi da inserire
+        const blocks = [];
+
+        savedNotes.forEach((note) => {
+          console.log('📝 Processing note:', note.id, {
+            annotationId: note.annotationId,
+            annotation: note.annotation,
+            hasAnnotation: !!note.annotation
+          });
+
+          if (note.annotationId) {
+            const annotation = note.annotation;
+
+            blocks.push({
+              type: 'pdfNoteBlock',
+              attrs: {
+                noteId: note.id,
+                annotationId: note.annotationId,
+                pageNumber: note.pageNumber || 1,
+                selectionText: note.selectionText || '',
+                color: annotation?.color || '#22c55e',
+                gutterIconId: annotation?.gutterIconId || 'note',
+                comment: note.comment || '',
+              },
+            });
+          }
+        });
+
+        console.log('✏️ Setting editor content with', blocks.length, 'blocks');
+
+        // Inserisci tutti i blocchi in una volta sola
+        editor.commands.setContent(blocks);
+
+        console.log('📚 Loaded', blocks.length, 'notes as blocks');
+      } else {
+        console.log('📚 No notes found in database');
       }
+    } catch (error) {
+      console.error('❌ Error loading notes:', error);
     }
-  };
-
-  const handleSave = async () => {
-    if (!editor) return;
-
-    setLoading(true);
-    const content = editor.getHTML();
-    const db = getDatabase();
-
-    if (db) {
-      await db.saveNote({
-        content: content,
-        pageNumber: null,
-        selectionText: null,
-        pdfCoordinates: null,
-      });
-
-      await loadNotes();
-    }
-
-    setLoading(false);
   };
 
   const addImage = () => {
@@ -137,21 +168,6 @@ const NotesEditor = forwardRef(function NotesEditor({ selectedText, bookId }, re
     if (url && editor) {
       editor.chain().focus().setLink({ href: url }).run();
     }
-  };
-
-  // Handler per caricare una nota nell'editor
-  const handleLoadNote = (note) => {
-    if (editor) {
-      editor.commands.setContent(note.content);
-    }
-  };
-
-  // Estrai un preview dal contenuto HTML
-  const getNotePreview = (htmlContent, maxLength = 50) => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = htmlContent;
-    const text = tempDiv.textContent || tempDiv.innerText || '';
-    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   };
 
   if (!editor) {
@@ -280,17 +296,6 @@ const NotesEditor = forwardRef(function NotesEditor({ selectedText, bookId }, re
           >
             Link
           </button>
-
-          <div className="flex-1"></div>
-
-          {/* Save Button */}
-          <button
-            onClick={handleSave}
-            disabled={loading}
-            className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-          >
-            {loading ? '...' : 'Salva Note'}
-          </button>
         </div>
       </div>
 
@@ -298,69 +303,6 @@ const NotesEditor = forwardRef(function NotesEditor({ selectedText, bookId }, re
       <div className="flex-1 overflow-auto bg-white">
         <EditorContent editor={editor} />
       </div>
-
-      {/* Info Box */}
-      {selectedText && (
-        <div className="border-t border-gray-200 p-3 bg-blue-50">
-          <p className="text-xs text-blue-800">
-            Testo dal PDF inserito come citazione (Pagina {selectedText.pageNumber})
-          </p>
-        </div>
-      )}
-
-      {/* Notes List - Scrollable */}
-      {notes.length > 0 && (
-        <div
-          ref={notesListRef}
-          className="border-t border-gray-200 bg-gray-50 max-h-48 overflow-y-auto"
-        >
-          <div className="p-3 border-b border-gray-200 bg-gray-100 sticky top-0">
-            <p className="text-xs text-gray-600 font-medium">
-              Note salvate: {notes.length}
-            </p>
-          </div>
-          <div className="divide-y divide-gray-200">
-            {notes.map((note) => (
-              <div
-                key={note.id}
-                ref={(el) => { noteRefs.current[note.id] = el; }}
-                className={`note-item p-3 cursor-pointer hover:bg-gray-100 transition-colors ${
-                  highlightedNoteId === note.id ? 'highlighted' : ''
-                }`}
-                onClick={() => handleLoadNote(note)}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate">
-                      {getNotePreview(note.content)}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      {note.pageNumber && (
-                        <span className="text-xs text-blue-600">
-                          Pag. {note.pageNumber}
-                        </span>
-                      )}
-                      {note.annotationId && (
-                        <span className="text-xs text-purple-600">
-                          Con annotazione
-                        </span>
-                      )}
-                      <span className="text-xs text-gray-400">
-                        {new Date(note.createdAt).toLocaleDateString('it-IT', {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 });

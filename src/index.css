@@ -451,3 +451,137 @@ canvas.pdf-page-canvas {
 .icon-picker-emoji {
   font-size: 18px;
 }
+
+/* ===== PDF NOTE BLOCKS (TipTap) ===== */
+.pdf-note-block {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin: 16px 0;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Header con icona, pagina e bottoni */
+.pdf-note-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-left: 4px solid;
+  background: #f9fafb;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.pdf-note-block-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-note-block-icon {
+  font-size: 18px;
+}
+
+.pdf-note-block-page {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.pdf-note-block-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-note-block-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.pdf-note-block-btn-navigate {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.pdf-note-block-btn-navigate:hover {
+  background-color: #2563eb;
+}
+
+.pdf-note-block-btn-delete {
+  background-color: #ef4444;
+  color: white;
+}
+
+.pdf-note-block-btn-delete:hover {
+  background-color: #dc2626;
+}
+
+/* Blockquote - Citazione dal PDF */
+.pdf-note-block-quote {
+  padding: 12px 16px;
+  background: #f3f4f6;
+  border-left: 3px solid #9ca3af;
+  font-style: italic;
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Commento editabile */
+.pdf-note-block-comment-wrapper {
+  position: relative;
+  padding: 12px 16px;
+}
+
+.pdf-note-block-comment {
+  width: 100%;
+  min-height: 80px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+
+.pdf-note-block-comment:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.pdf-note-block-saving-indicator {
+  position: absolute;
+  bottom: 16px;
+  right: 20px;
+  font-size: 11px;
+  color: #6b7280;
+  background: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* ===== FLASH ANIMATION (Navigazione Nota -> PDF) ===== */
+.annotation-rect.flashing {
+  animation: outlineFlash 2.5s ease-in-out;
+  z-index: 10;
+}
+
+@keyframes outlineFlash {
+  0%, 20%, 40%, 60%, 80%, 100% {
+    opacity: 0.15;
+    box-shadow: none;
+  }
+  10%, 30%, 50%, 70%, 90% {
+    opacity: 0.9;
+    box-shadow: 0 0 16px 4px currentColor;
+  }
+}

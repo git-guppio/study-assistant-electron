@@ -1,3 +1,5 @@
+console.log('📊📊📊 DATABASE.JS LOADED - VERSION 2 WITH LOGGING 📊📊📊');
+
 // Lazy load di sql.js per evitare conflitti
 let initSqlJs = null;
 function getSqlJs() {
@@ -299,11 +301,29 @@ function runQuery(sql, params = []) {
 // ==================== NOTE ====================
 
 function getNotes() {
-  const notes = queryAll('SELECT * FROM notes ORDER BY createdAt DESC');
-  return notes.map(note => ({
+  const notes = queryAll(`
+    SELECT
+      n.*,
+      a.color as annotation_color,
+      a.gutterIconId as annotation_gutterIconId
+    FROM notes n
+    LEFT JOIN annotations a ON n.annotationId = a.id
+    ORDER BY n.createdAt DESC
+  `);
+
+  console.log('[DB] getNotes - raw results:', notes.length, notes);
+
+  const mapped = notes.map(note => ({
     ...note,
-    pdfCoordinates: note.pdfCoordinates ? JSON.parse(note.pdfCoordinates) : null
+    pdfCoordinates: note.pdfCoordinates ? JSON.parse(note.pdfCoordinates) : null,
+    annotation: note.annotationId ? {
+      color: note.annotation_color,
+      gutterIconId: note.annotation_gutterIconId
+    } : null
   }));
+
+  console.log('[DB] getNotes - mapped results:', mapped);
+  return mapped;
 }
 
 function getNoteById(id) {
@@ -336,6 +356,10 @@ function updateNote(id, updates) {
   if (updates.content !== undefined) {
     fields.push('content = ?');
     values.push(updates.content);
+  }
+  if (updates.comment !== undefined) {
+    fields.push('comment = ?');
+    values.push(updates.comment);
   }
   if (updates.pageNumber !== undefined) {
     fields.push('pageNumber = ?');

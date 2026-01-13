@@ -17,8 +17,9 @@ function App() {
   const [customIconColors, setCustomIconColors] = useState({});
   const [customActionColors, setCustomActionColors] = useState({});
 
-  // Ref per NotesEditor (per scroll-to-note)
+  // Refs per comunicazione tra componenti
   const notesEditorRef = useRef(null);
+  const pdfViewerRef = useRef(null);
 
   // Carica informazioni libro all'avvio
   useEffect(() => {
@@ -169,7 +170,20 @@ function App() {
 
       setAnnotations(prev => [...prev, newAnnotation]);
 
-      // 5. Switch alla tab note
+      // 5. Inserisci il blocco nota nel TipTap editor
+      if (notesEditorRef.current?.insertPdfNoteBlock) {
+        notesEditorRef.current.insertPdfNoteBlock({
+          id: newNote.id,
+          annotationId: newAnnotation.id,
+          pageNumber: annotationData.pageNumber,
+          selectionText: annotationData.text,
+          color: annotationData.color,
+          gutterIconId: annotationData.gutterIconId,
+          comment: '',
+        });
+      }
+
+      // 6. Switch alla tab note
       setActiveTab('notes');
 
       console.log('📝 Note created:', newAnnotation.id, newNote.id);
@@ -285,17 +299,35 @@ function App() {
     }
   };
 
-  // Elimina un'annotazione
+  // Elimina un'annotazione dal PDF (click destro sul PDF)
   const handleDeleteAnnotation = async (annotationId) => {
     const db = getDatabase();
     if (!db) return;
 
     try {
+      // Trova l'annotazione per determinare il tipo
+      const annotation = annotations.find(a => a.id === annotationId);
+      console.log('🗑️ Deleting annotation:', annotationId, annotation);
+
+      if (annotation?.type === 'note' && annotation.noteId) {
+        console.log('📝 This is a note annotation, removing TipTap block:', annotation.noteId);
+        // Se è una nota, rimuovi anche il blocco TipTap
+        if (notesEditorRef.current?.removePdfNoteBlock) {
+          notesEditorRef.current.removePdfNoteBlock(annotation.noteId);
+          console.log('✅ TipTap block removal called');
+        } else {
+          console.warn('⚠️ notesEditorRef.current.removePdfNoteBlock not available');
+        }
+      } else {
+        console.log('ℹ️ Not a note annotation or no noteId:', { type: annotation?.type, noteId: annotation?.noteId });
+      }
+
+      // Elimina dal DB
       await db.deleteAnnotation(annotationId);
       setAnnotations(prev => prev.filter(a => a.id !== annotationId));
-      console.log('🗑️ Annotation deleted:', annotationId);
+      console.log('✅ Annotation deleted from DB and state:', annotationId);
     } catch (error) {
-      console.error('Error deleting annotation:', error);
+      console.error('❌ Error deleting annotation:', error);
     }
   };
 
@@ -305,9 +337,42 @@ function App() {
       setActiveTab('notes');
       // Usa un piccolo delay per assicurarsi che la tab sia visibile
       setTimeout(() => {
-        if (notesEditorRef.current?.scrollToNote) {
-          notesEditorRef.current.scrollToNote(annotation.noteId);
+        if (notesEditorRef.current?.scrollToBlock) {
+          notesEditorRef.current.scrollToBlock(annotation.noteId);
         }
+      }, 100);
+    }
+  };
+
+  // Elimina nota da TipTap -> elimina anche annotation dal PDF
+  const handleDeleteNote = async (noteId, annotationId) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      // Elimina dal DB (CASCADE elimina anche l'annotazione)
+      await db.deleteNote(noteId);
+
+      // Rimuovi annotation dallo state
+      setAnnotations(prev => prev.filter(a => a.id !== annotationId));
+
+      console.log('🗑️ Note and annotation deleted:', noteId, annotationId);
+    } catch (error) {
+      console.error('Error deleting note:', error);
+    }
+  };
+
+  // Naviga al PDF da blocco nota TipTap
+  const handleNavigateToPdf = ({ annotationId, pageNumber }) => {
+    console.log('📄 Navigate to PDF:', { annotationId, pageNumber });
+
+    if (pdfViewerRef.current) {
+      // 1. Vai alla pagina corretta
+      pdfViewerRef.current.goToPage(pageNumber);
+
+      // 2. Flash l'annotazione (con piccolo delay per dare tempo al rendering della pagina)
+      setTimeout(() => {
+        pdfViewerRef.current?.flashOutline(annotationId);
       }, 100);
     }
   };
@@ -319,6 +384,9 @@ function App() {
           <NotesEditor
             ref={notesEditorRef}
             bookId={bookInfo?.bookId}
+            dbReady={dbReady}
+            onDeleteNote={handleDeleteNote}
+            onNavigateToPdf={handleNavigateToPdf}
           />
         );
       case 'mindmap':
@@ -387,6 +455,7 @@ function App() {
           <div className="flex-1 overflow-auto">
             {pdfPath ? (
               <PDFViewer
+                ref={pdfViewerRef}
                 filePath={pdfPath}
                 annotations={annotations}
                 onAddNote={handleAddNote}

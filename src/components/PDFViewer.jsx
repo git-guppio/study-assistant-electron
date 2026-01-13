@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import ContextMenu from './ContextMenu';
 import { getSelectionRects, denormalizeRect, getGutterYPosition, findAnnotationAtPoint } from '../utils/coordinates';
@@ -10,7 +10,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).href;
 
-function PDFViewer({
+const PDFViewer = forwardRef(function PDFViewer({
   filePath,
   annotations = [],
   onAddNote,
@@ -23,13 +23,14 @@ function PDFViewer({
   documentDefaults = {},
   customIconColors = {},
   customActionColors = {}
-}) {
+}, ref) {
   const [pdfDoc, setPdfDoc] = useState(null);
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [scale, setScale] = useState(1.5);
   const [loading, setLoading] = useState(false);
   const [viewport, setViewport] = useState(null);
+  const [flashingAnnotationId, setFlashingAnnotationId] = useState(null);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState(null);
@@ -44,6 +45,33 @@ function PDFViewer({
   const gutterLayerRef = useRef(null);
   const pageContainerRef = useRef(null);
   const renderTaskRef = useRef(null);
+  const flashTimeoutRef = useRef(null);
+
+  // Esponi metodi via ref per navigazione da Note -> PDF
+  useImperativeHandle(ref, () => ({
+    // Vai a una pagina specifica
+    goToPage: (pageNumber) => {
+      if (pageNumber >= 1 && pageNumber <= numPages) {
+        setCurrentPage(pageNumber);
+      }
+    },
+    // Flash animazione su un'annotazione
+    flashOutline: (annotationId) => {
+      // Pulisci timeout precedente
+      if (flashTimeoutRef.current) {
+        clearTimeout(flashTimeoutRef.current);
+      }
+
+      setFlashingAnnotationId(annotationId);
+
+      // Rimuovi flash dopo 2.5s
+      flashTimeoutRef.current = setTimeout(() => {
+        setFlashingAnnotationId(null);
+      }, 2500);
+    },
+    // Getter per la pagina corrente
+    getCurrentPage: () => currentPage
+  }), [numPages, currentPage]);
 
   // Filtra annotazioni per la pagina corrente
   const pageAnnotations = annotations.filter(a => a.pageNumber === currentPage);
@@ -338,10 +366,13 @@ function PDFViewer({
         style.opacity = annotation.opacity || ANNOTATION_OPACITY.note;
       }
 
+      // Aggiungi classe flashing se questa annotazione sta lampeggiando
+      const isFlashing = flashingAnnotationId === annotation.id;
+
       return (
         <div
           key={`${annotation.id}-${idx}`}
-          className={`annotation-rect ${annotation.type}`}
+          className={`annotation-rect ${annotation.type}${isFlashing ? ' flashing' : ''}`}
           style={style}
           onContextMenu={(e) => handleAnnotationContextMenu(e, annotation)}
         />
@@ -458,6 +489,6 @@ function PDFViewer({
       )}
     </div>
   );
-}
+});
 
 export default PDFViewer;

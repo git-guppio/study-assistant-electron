@@ -84,6 +84,7 @@ function createWindow() {
 
 // Quando Electron è pronto
 app.whenReady().then(() => {
+  console.log('🚀🚀🚀 MAIN.JS LOADED - VERSION 2 WITH IPC LOGGING 🚀🚀🚀');
   createWindow();
 
   app.on('activate', () => {
@@ -182,7 +183,10 @@ ipcMain.handle('db-close', () => {
 
 // --- Note ---
 ipcMain.handle('db-get-notes', () => {
-  return getDatabase().getNotes();
+  console.log('[IPC] db-get-notes called');
+  const result = getDatabase().getNotes();
+  console.log('[IPC] db-get-notes result:', result.length, 'notes');
+  return result;
 });
 
 ipcMain.handle('db-get-note', (event, id) => {
