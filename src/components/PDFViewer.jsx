@@ -44,8 +44,10 @@ const PDFViewer = forwardRef(function PDFViewer({
   const highlightsLayerRef = useRef(null);
   const gutterLayerRef = useRef(null);
   const pageContainerRef = useRef(null);
+  const contentAreaRef = useRef(null);
   const renderTaskRef = useRef(null);
   const flashTimeoutRef = useRef(null);
+  const scrollPositionRef = useRef('top'); // 'top' | 'bottom' - posizione iniziale dopo cambio pagina
 
   // Esponi metodi via ref per navigazione da Note -> PDF
   useImperativeHandle(ref, () => ({
@@ -141,16 +143,34 @@ const PDFViewer = forwardRef(function PDFViewer({
   useEffect(() => {
     if (!pdfDoc) return;
 
+    let cancelled = false;
+
     const renderPage = async () => {
       try {
-        if (renderTaskRef.current) renderTaskRef.current.cancel();
+        // Cancella render precedente e attendi che sia completato
+        if (renderTaskRef.current) {
+          renderTaskRef.current.cancel();
+          try {
+            await renderTaskRef.current.promise;
+          } catch (e) {
+            // Ignora errore di cancellazione
+          }
+          renderTaskRef.current = null;
+        }
+
+        // Se questo effect è stato cancellato nel frattempo, esci
+        if (cancelled) return;
 
         const page = await pdfDoc.getPage(currentPage);
+        if (cancelled) return;
+
         const vp = page.getViewport({ scale });
         setViewport(vp);
 
         const canvas = canvasRef.current;
         const textLayerDiv = textLayerRef.current;
+        if (!canvas) return;
+
         const dpr = window.devicePixelRatio || 1;
 
         // 1. Configurazione Canvas (HiDPI)
@@ -169,6 +189,8 @@ const PDFViewer = forwardRef(function PDFViewer({
         });
         await renderTaskRef.current.promise;
 
+        if (cancelled) return;
+
         // 2. Configurazione Text Layer
         if (textLayerDiv) {
           textLayerDiv.innerHTML = '';
@@ -177,6 +199,8 @@ const PDFViewer = forwardRef(function PDFViewer({
           textLayerDiv.style.setProperty('--scale-factor', scale);
 
           const textContent = await page.getTextContent();
+          if (cancelled) return;
+
           await pdfjsLib.renderTextLayer({
             textContentSource: textContent,
             container: textLayerDiv,
@@ -197,7 +221,83 @@ const PDFViewer = forwardRef(function PDFViewer({
     };
 
     renderPage();
+
+    // Cleanup: cancella questo render se l'effect viene ri-eseguito
+    return () => {
+      cancelled = true;
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+      }
+    };
   }, [pdfDoc, currentPage, scale]);
+
+  // Posiziona lo scroll dopo il rendering della pagina (quando si cambia pagina)
+  useEffect(() => {
+    if (!contentAreaRef.current || !viewport) return;
+
+    const container = contentAreaRef.current;
+
+    // Applica la posizione di scroll richiesta
+    if (scrollPositionRef.current === 'bottom') {
+      // Scrolla alla fine della pagina
+      container.scrollTop = container.scrollHeight - container.clientHeight;
+    } else {
+      // Scrolla all'inizio della pagina
+      container.scrollTop = 0;
+    }
+
+    // Reset a 'top' per il comportamento di default
+    scrollPositionRef.current = 'top';
+  }, [viewport, currentPage]);
+
+  // Registra evento wheel con passive: false per poter usare preventDefault
+  useEffect(() => {
+    const container = contentAreaRef.current;
+    if (!container) return;
+
+    const handleWheel = (e) => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtTop = scrollTop <= 0;
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1; // -1 per tolleranza
+      const canScroll = scrollHeight > clientHeight;
+
+      // Se la pagina non richiede scroll, cambia pagina direttamente
+      if (!canScroll) {
+        e.preventDefault();
+        if (e.deltaY > 0 && currentPage < numPages) {
+          // Scroll verso il basso -> pagina successiva
+          scrollPositionRef.current = 'top';
+          setCurrentPage(p => p + 1);
+        } else if (e.deltaY < 0 && currentPage > 1) {
+          // Scroll verso l'alto -> pagina precedente
+          scrollPositionRef.current = 'bottom';
+          setCurrentPage(p => p - 1);
+        }
+        return;
+      }
+
+      // Se la pagina richiede scroll, cambia pagina solo ai bordi
+      if (e.deltaY > 0 && isAtBottom && currentPage < numPages) {
+        // Al bordo inferiore, scroll verso il basso -> pagina successiva
+        e.preventDefault();
+        scrollPositionRef.current = 'top';
+        setCurrentPage(p => p + 1);
+      } else if (e.deltaY < 0 && isAtTop && currentPage > 1) {
+        // Al bordo superiore, scroll verso l'alto -> pagina precedente
+        e.preventDefault();
+        scrollPositionRef.current = 'bottom';
+        setCurrentPage(p => p - 1);
+      }
+      // Altrimenti, lascia lo scroll normale
+    };
+
+    // Registra con passive: false per permettere preventDefault
+    container.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [currentPage, numPages]);
 
   // Handler per selezione testo
   const handleMouseUp = (e) => {
@@ -469,6 +569,7 @@ const PDFViewer = forwardRef(function PDFViewer({
 
       {/* Area Documento */}
       <div
+        ref={contentAreaRef}
         className="pdf-content-area"
         onMouseUp={handleMouseUp}
         onContextMenu={handleContextMenu}
