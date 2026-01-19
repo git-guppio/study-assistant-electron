@@ -71,15 +71,22 @@ canvas.pdf-page-canvas {
   position: absolute;
   top: 0;
   left: -44px;
-  width: 40px;
+  width: 80px; /* Ampliato per contenere icone sovrapposte */
   height: 100%;
   z-index: 3;
   pointer-events: auto;
 }
 
-.gutter-icon {
+.gutter-icon-group {
   position: absolute;
   left: 4px;
+  height: 32px;
+  pointer-events: auto;
+}
+
+.gutter-icon {
+  position: absolute;
+  top: 0;
   width: 32px;
   height: 32px;
   display: flex;
@@ -87,9 +94,9 @@ canvas.pdf-page-canvas {
   justify-content: center;
   cursor: pointer;
   border-radius: 6px;
-  transition: background-color 0.15s, transform 0.15s;
+  transition: background-color 0.15s, transform 0.15s, z-index 0.15s;
   font-size: 16px;
-  background-color: rgba(255, 255, 255, 0.9);
+  background-color: rgba(255, 255, 255, 0.95);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
   outline: none;
   border: none;
@@ -98,6 +105,7 @@ canvas.pdf-page-canvas {
 .gutter-icon:hover {
   background-color: rgba(139, 92, 246, 0.2);
   transform: scale(1.1);
+  z-index: 100 !important; /* Porta sopra le altre icone al hover */
 }
 
 .gutter-icon.highlight {
@@ -514,6 +522,24 @@ canvas.pdf-page-canvas {
   overflow: hidden;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease;
+}
+
+/* Animazione flash quando si naviga dal gutter */
+.pdf-note-block.note-flash {
+  animation: noteFlash 2s ease-in-out;
+}
+
+@keyframes noteFlash {
+  0%, 100% {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5), 0 0 12px rgba(59, 130, 246, 0.3);
+  }
+  20%, 40%, 60%, 80% {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
 }
 
 /* Header con icona, pagina e bottoni */

@@ -72,7 +72,7 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
   };
 
   return (
-    <NodeViewWrapper className="pdf-note-block">
+    <NodeViewWrapper className="pdf-note-block" data-note-id={noteId}>
       {/* Header */}
       <div className="pdf-note-block-header" style={{ borderLeftColor: color }}>
         <div className="pdf-note-block-header-left">

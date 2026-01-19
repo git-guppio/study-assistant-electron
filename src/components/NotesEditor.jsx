@@ -116,10 +116,27 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
       }
     },
 
-    // Scrolla a un blocco nota
+    // Scrolla a un blocco nota e lo evidenzia
     scrollToBlock: (noteId) => {
-      // TODO: Implementare scroll al blocco quando TipTap supporta meglio il NodeView scrolling
       console.log('🔍 Scroll to note:', noteId);
+
+      // Trova l'elemento nel DOM usando data-note-id
+      const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+
+      if (noteElement) {
+        // Scrolla all'elemento
+        noteElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Aggiungi classe per flash animation
+        noteElement.classList.add('note-flash');
+
+        // Rimuovi classe dopo l'animazione
+        setTimeout(() => {
+          noteElement.classList.remove('note-flash');
+        }, 2000);
+      } else {
+        console.warn('⚠️ Note element not found in DOM:', noteId);
+      }
     }
   }), [editor]);
 

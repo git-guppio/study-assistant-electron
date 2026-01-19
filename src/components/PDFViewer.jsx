@@ -76,6 +76,43 @@ const PDFViewer = forwardRef(function PDFViewer({
   // Filtra annotazioni per la pagina corrente
   const pageAnnotations = annotations.filter(a => a.pageNumber === currentPage);
 
+  // Raggruppa icone gutter per posizione Y (soglia 20px per considerarle sulla stessa riga)
+  const GUTTER_GROUP_THRESHOLD = 20; // pixel
+  const gutterAnnotations = pageAnnotations.filter(a => a.gutterIconId);
+
+  const groupedGutterIcons = React.useMemo(() => {
+    if (!viewport) return [];
+
+    // Calcola posizione Y per ogni annotazione e raggruppa
+    const annotationsWithY = gutterAnnotations.map(a => ({
+      annotation: a,
+      yPos: getGutterYPosition(a, viewport.height)
+    }));
+
+    // Ordina per Y
+    annotationsWithY.sort((a, b) => a.yPos - b.yPos);
+
+    // Raggruppa annotazioni vicine
+    const groups = [];
+    let currentGroup = null;
+
+    for (const item of annotationsWithY) {
+      if (!currentGroup || Math.abs(item.yPos - currentGroup.yPos) > GUTTER_GROUP_THRESHOLD) {
+        // Nuovo gruppo
+        currentGroup = {
+          yPos: item.yPos,
+          annotations: [item.annotation]
+        };
+        groups.push(currentGroup);
+      } else {
+        // Aggiungi al gruppo esistente
+        currentGroup.annotations.push(item.annotation);
+      }
+    }
+
+    return groups;
+  }, [gutterAnnotations, viewport]);
+
   // Caricamento Documento
   useEffect(() => {
     if (!filePath) return;
@@ -439,22 +476,29 @@ const PDFViewer = forwardRef(function PDFViewer({
         <div ref={pageContainerRef} className="pdf-page-container">
           {/* Gutter Layer (icone a sinistra) */}
           <div ref={gutterLayerRef} className="pdf-gutter-layer">
-            {viewport && pageAnnotations
-              .filter(a => a.gutterIconId) // Solo annotazioni con icona gutter
-              .map(annotation => (
-                <div
-                  key={`gutter-${annotation.id}`}
-                  className={`gutter-icon ${annotation.type}`}
-                  style={{
-                    top: `${getGutterYPosition(annotation, viewport.height)}px`,
-                    borderColor: annotation.color
-                  }}
-                  onClick={() => handleGutterIconClick(annotation)}
-                  title={`Vai alla nota (pagina ${annotation.pageNumber})`}
-                >
-                  {getEmojiForIcon(annotation.gutterIconId)}
-                </div>
-              ))}
+            {viewport && groupedGutterIcons.map((group, groupIndex) => (
+              <div
+                key={`gutter-group-${groupIndex}`}
+                className="gutter-icon-group"
+                style={{ top: `${group.yPos}px` }}
+              >
+                {group.annotations.map((annotation, idx) => (
+                  <div
+                    key={`gutter-${annotation.id}`}
+                    className={`gutter-icon ${annotation.type}`}
+                    style={{
+                      left: `${idx * 16}px`, // 50% di 32px (larghezza icona)
+                      zIndex: idx + 1, // Ultima icona sopra (più recente)
+                      borderColor: annotation.color
+                    }}
+                    onClick={() => handleGutterIconClick(annotation)}
+                    title={`Vai alla nota (pagina ${annotation.pageNumber})`}
+                  >
+                    {getEmojiForIcon(annotation.gutterIconId)}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
 
           {/* Canvas (PDF rendering) */}
