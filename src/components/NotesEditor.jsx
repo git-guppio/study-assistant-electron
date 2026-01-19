@@ -34,28 +34,62 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
 
   // Esponi metodi via ref
   useImperativeHandle(ref, () => ({
-    // Inserisce un nuovo blocco nota
+    // Inserisce un nuovo blocco nota nella posizione corretta (ordinato per pagina e posizione Y)
     insertPdfNoteBlock: (noteData) => {
       if (!editor) return;
 
+      const newBlock = {
+        type: 'pdfNoteBlock',
+        attrs: {
+          noteId: noteData.id,
+          annotationId: noteData.annotationId,
+          pageNumber: noteData.pageNumber,
+          positionY: noteData.positionY || 0,
+          selectionText: noteData.selectionText,
+          color: noteData.color,
+          gutterIconId: noteData.gutterIconId,
+          comment: noteData.comment || '',
+        },
+      };
+
+      // Trova la posizione corretta per inserire il nuovo blocco
+      const { doc } = editor.state;
+      let insertPosition = doc.content.size; // Default: fine documento
+      let found = false;
+
+      const newPage = noteData.pageNumber || 0;
+      const newY = noteData.positionY || 0;
+
+      // Scansiona tutti i nodi per trovare dove inserire
+      doc.descendants((node, pos) => {
+        // Se già trovata la posizione, non continuare
+        if (found) return false;
+
+        if (node.type.name === 'pdfNoteBlock') {
+          const existingPage = node.attrs.pageNumber || 0;
+          const existingY = node.attrs.positionY || 0;
+
+          console.log('🔍 Comparing:', { newPage, newY, existingPage, existingY, pos });
+
+          // Se il nuovo blocco viene prima di questo (pagina minore, o stessa pagina con Y minore)
+          if (newPage < existingPage || (newPage === existingPage && newY < existingY)) {
+            insertPosition = pos;
+            found = true;
+            return false; // Stop descending
+          }
+        }
+        return true; // Continua a cercare
+      });
+
+      console.log('📝 Insert position calculated:', insertPosition, 'found:', found);
+
+      // Inserisci nella posizione calcolata
       editor
         .chain()
-        .focus()
-        .insertContent({
-          type: 'pdfNoteBlock',
-          attrs: {
-            noteId: noteData.id,
-            annotationId: noteData.annotationId,
-            pageNumber: noteData.pageNumber,
-            selectionText: noteData.selectionText,
-            color: noteData.color,
-            gutterIconId: noteData.gutterIconId,
-            comment: noteData.comment || '',
-          },
-        })
+        .insertContentAt(insertPosition, newBlock)
         .run();
 
-      console.log('📝 Note block inserted:', noteData.id);
+      console.log('📝 Note block inserted at position', insertPosition, ':', noteData.id);
     },
 
     // Rimuove un blocco nota
@@ -126,6 +160,8 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
 
           if (note.annotationId) {
             const annotation = note.annotation;
+            // Estrai positionY dalle coordinate salvate
+            const positionY = note.pdfCoordinates?.y || 0;
 
             blocks.push({
               type: 'pdfNoteBlock',
@@ -133,6 +169,7 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
                 noteId: note.id,
                 annotationId: note.annotationId,
                 pageNumber: note.pageNumber || 1,
+                positionY: positionY,
                 selectionText: note.selectionText || '',
                 color: annotation?.color || '#22c55e',
                 gutterIconId: annotation?.gutterIconId || 'note',
@@ -140,6 +177,14 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
               },
             });
           }
+        });
+
+        // Ordina i blocchi per pagina e poi per posizione Y
+        blocks.sort((a, b) => {
+          const pageA = a.attrs.pageNumber;
+          const pageB = b.attrs.pageNumber;
+          if (pageA !== pageB) return pageA - pageB;
+          return a.attrs.positionY - b.attrs.positionY;
         });
 
         console.log('✏️ Setting editor content with', blocks.length, 'blocks');

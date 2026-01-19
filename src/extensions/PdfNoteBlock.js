@@ -9,6 +9,7 @@ import PdfNoteBlockComponent from '../components/PdfNoteBlockComponent';
  * - noteId: ID della nota nel database
  * - annotationId: ID dell'annotazione PDF collegata
  * - pageNumber: Numero pagina PDF
+ * - positionY: Posizione Y nel PDF (per ordinamento)
  * - selectionText: Testo selezionato dal PDF
  * - color: Colore dell'annotazione
  * - gutterIconId: ID dell'icona (es: 'note', 'important', 'idea', etc.)
@@ -58,6 +59,18 @@ export const PdfNoteBlock = Node.create({
         renderHTML: attributes => {
           return {
             'data-page-number': attributes.pageNumber,
+          };
+        },
+      },
+      positionY: {
+        default: 0,
+        parseHTML: element => {
+          const value = element.getAttribute('data-position-y');
+          return value ? parseFloat(value) : 0;
+        },
+        renderHTML: attributes => {
+          return {
+            'data-position-y': attributes.positionY,
           };
         },
       },

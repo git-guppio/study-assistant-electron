@@ -176,6 +176,7 @@ function App() {
           id: newNote.id,
           annotationId: newAnnotation.id,
           pageNumber: annotationData.pageNumber,
+          positionY: annotationData.rects[0]?.y || 0,  // Per ordinamento
           selectionText: annotationData.text,
           color: annotationData.color,
           gutterIconId: annotationData.gutterIconId,
