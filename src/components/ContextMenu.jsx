@@ -129,25 +129,33 @@ function ContextMenu({
 
   const adjustedPosition = getAdjustedPosition();
 
-  // Handler per click su voce menu principale
+  // Handler per click su voce menu principale - ESEGUE AZIONE IMMEDIATAMENTE
   const handleSectionClick = (section) => {
+    executeAction(section);
+  };
+
+  // Handler per click su freccia espansione - ESPANDE/COMPRIME SUBMENU
+  const handleSectionExpandClick = (e, section) => {
+    e.stopPropagation(); // Evita che si attivi anche handleSectionClick
     if (expandedSection === section) {
-      // Se gia' espanso, esegui azione con valori correnti
-      executeAction(section);
+      setExpandedSection(null);
     } else {
-      // Espandi la sezione
       setExpandedSection(section);
       setExpandedAction(null);
     }
   };
 
-  // Handler per click su azione avanzata
+  // Handler per click su azione avanzata - ESEGUE AZIONE IMMEDIATAMENTE
   const handleActionClick = (action) => {
+    executeAction(action);
+  };
+
+  // Handler per click su freccia azione avanzata - ESPANDE/COMPRIME SUBMENU
+  const handleActionExpandClick = (e, action) => {
+    e.stopPropagation();
     if (expandedAction === action) {
-      // Se gia' espanso, esegui azione
-      executeAction(action);
+      setExpandedAction(null);
     } else {
-      // Espandi l'azione
       setExpandedAction(action);
     }
   };
@@ -235,18 +243,26 @@ function ContextMenu({
     <>
       {/* AGGIUNGI NOTA */}
       <div className="context-menu-section">
-        <button
-          className={`context-menu-item ${expandedSection === 'note' ? 'expanded' : ''}`}
-          onClick={() => handleSectionClick('note')}
-        >
-          <span className="context-menu-icon">{getEmojiForIconId(selectedIconId)}</span>
-          <span className="context-menu-label">Aggiungi nota</span>
-          <span
-            className="context-menu-color-preview"
-            style={{ backgroundColor: selectedNoteColor }}
-          />
-          <span className="context-menu-arrow">{expandedSection === 'note' ? '▼' : '▶'}</span>
-        </button>
+        <div className={`context-menu-item ${expandedSection === 'note' ? 'expanded' : ''}`}>
+          <button
+            className="context-menu-item-main"
+            onClick={() => handleSectionClick('note')}
+          >
+            <span className="context-menu-icon">{getEmojiForIconId(selectedIconId)}</span>
+            <span className="context-menu-label">Aggiungi nota</span>
+            <span
+              className="context-menu-color-preview"
+              style={{ backgroundColor: selectedNoteColor }}
+            />
+          </button>
+          <button
+            className="context-menu-expand-btn"
+            onClick={(e) => handleSectionExpandClick(e, 'note')}
+            title="Personalizza"
+          >
+            <span className="context-menu-arrow">{expandedSection === 'note' ? '▼' : '▶'}</span>
+          </button>
+        </div>
 
         {expandedSection === 'note' && (
           <div className="context-menu-submenu">
@@ -281,18 +297,26 @@ function ContextMenu({
 
       {/* EVIDENZIATURA */}
       <div className="context-menu-section">
-        <button
-          className={`context-menu-item ${expandedSection === 'highlight' ? 'expanded' : ''}`}
-          onClick={() => handleSectionClick('highlight')}
-        >
-          <span className="context-menu-icon">🖍️</span>
-          <span className="context-menu-label">Evidenziatura</span>
-          <span
-            className="context-menu-color-preview"
-            style={{ backgroundColor: selectedHighlightColor }}
-          />
-          <span className="context-menu-arrow">{expandedSection === 'highlight' ? '▼' : '▶'}</span>
-        </button>
+        <div className={`context-menu-item ${expandedSection === 'highlight' ? 'expanded' : ''}`}>
+          <button
+            className="context-menu-item-main"
+            onClick={() => handleSectionClick('highlight')}
+          >
+            <span className="context-menu-icon">🖍️</span>
+            <span className="context-menu-label">Evidenziatura</span>
+            <span
+              className="context-menu-color-preview"
+              style={{ backgroundColor: selectedHighlightColor }}
+            />
+          </button>
+          <button
+            className="context-menu-expand-btn"
+            onClick={(e) => handleSectionExpandClick(e, 'highlight')}
+            title="Personalizza"
+          >
+            <span className="context-menu-arrow">{expandedSection === 'highlight' ? '▼' : '▶'}</span>
+          </button>
+        </div>
 
         {expandedSection === 'highlight' && (
           <div className="context-menu-submenu">
@@ -318,31 +342,39 @@ function ContextMenu({
 
       {/* AZIONI AVANZATE */}
       <div className="context-menu-section">
-        <button
-          className={`context-menu-item ${expandedSection === 'actions' ? 'expanded' : ''}`}
+        <div
+          className={`context-menu-item context-menu-item-expandable ${expandedSection === 'actions' ? 'expanded' : ''}`}
           onClick={() => setExpandedSection(expandedSection === 'actions' ? null : 'actions')}
         >
           <span className="context-menu-icon">📚</span>
           <span className="context-menu-label">Azioni Avanzate</span>
           <span className="context-menu-arrow">{expandedSection === 'actions' ? '▼' : '▶'}</span>
-        </button>
+        </div>
 
         {expandedSection === 'actions' && (
           <div className="context-menu-submenu actions-submenu">
             {/* Flashcard */}
             <div className="action-item-wrapper">
-              <button
-                className={`context-menu-item sub-item ${expandedAction === 'flashcard' ? 'expanded' : ''}`}
-                onClick={() => handleActionClick('flashcard')}
-              >
-                <span className="context-menu-icon">🧠</span>
-                <span className="context-menu-label">Crea flashcard</span>
-                <span
-                  className="context-menu-color-preview"
-                  style={{ backgroundColor: actionColors.flashcard }}
-                />
-                <span className="context-menu-arrow">{expandedAction === 'flashcard' ? '▼' : '▶'}</span>
-              </button>
+              <div className={`context-menu-item sub-item ${expandedAction === 'flashcard' ? 'expanded' : ''}`}>
+                <button
+                  className="context-menu-item-main"
+                  onClick={() => handleActionClick('flashcard')}
+                >
+                  <span className="context-menu-icon">🧠</span>
+                  <span className="context-menu-label">Crea flashcard</span>
+                  <span
+                    className="context-menu-color-preview"
+                    style={{ backgroundColor: actionColors.flashcard }}
+                  />
+                </button>
+                <button
+                  className="context-menu-expand-btn"
+                  onClick={(e) => handleActionExpandClick(e, 'flashcard')}
+                  title="Personalizza"
+                >
+                  <span className="context-menu-arrow">{expandedAction === 'flashcard' ? '▼' : '▶'}</span>
+                </button>
+              </div>
 
               {expandedAction === 'flashcard' && (
                 <div className="context-menu-action-submenu">
@@ -370,18 +402,26 @@ function ContextMenu({
 
             {/* Dizionario */}
             <div className="action-item-wrapper">
-              <button
-                className={`context-menu-item sub-item ${expandedAction === 'dictionary' ? 'expanded' : ''}`}
-                onClick={() => handleActionClick('dictionary')}
-              >
-                <span className="context-menu-icon">📖</span>
-                <span className="context-menu-label">Inserisci in dizionario</span>
-                <span
-                  className="context-menu-color-preview"
-                  style={{ backgroundColor: actionColors.dictionary }}
-                />
-                <span className="context-menu-arrow">{expandedAction === 'dictionary' ? '▼' : '▶'}</span>
-              </button>
+              <div className={`context-menu-item sub-item ${expandedAction === 'dictionary' ? 'expanded' : ''}`}>
+                <button
+                  className="context-menu-item-main"
+                  onClick={() => handleActionClick('dictionary')}
+                >
+                  <span className="context-menu-icon">📖</span>
+                  <span className="context-menu-label">Inserisci in dizionario</span>
+                  <span
+                    className="context-menu-color-preview"
+                    style={{ backgroundColor: actionColors.dictionary }}
+                  />
+                </button>
+                <button
+                  className="context-menu-expand-btn"
+                  onClick={(e) => handleActionExpandClick(e, 'dictionary')}
+                  title="Personalizza"
+                >
+                  <span className="context-menu-arrow">{expandedAction === 'dictionary' ? '▼' : '▶'}</span>
+                </button>
+              </div>
 
               {expandedAction === 'dictionary' && (
                 <div className="context-menu-action-submenu">
@@ -409,18 +449,26 @@ function ContextMenu({
 
             {/* Keyword */}
             <div className="action-item-wrapper">
-              <button
-                className={`context-menu-item sub-item ${expandedAction === 'keyword' ? 'expanded' : ''}`}
-                onClick={() => handleActionClick('keyword')}
-              >
-                <span className="context-menu-icon">🔑</span>
-                <span className="context-menu-label">Parola chiave</span>
-                <span
-                  className="context-menu-color-preview"
-                  style={{ backgroundColor: actionColors.keyword }}
-                />
-                <span className="context-menu-arrow">{expandedAction === 'keyword' ? '▼' : '▶'}</span>
-              </button>
+              <div className={`context-menu-item sub-item ${expandedAction === 'keyword' ? 'expanded' : ''}`}>
+                <button
+                  className="context-menu-item-main"
+                  onClick={() => handleActionClick('keyword')}
+                >
+                  <span className="context-menu-icon">🔑</span>
+                  <span className="context-menu-label">Parola chiave</span>
+                  <span
+                    className="context-menu-color-preview"
+                    style={{ backgroundColor: actionColors.keyword }}
+                  />
+                </button>
+                <button
+                  className="context-menu-expand-btn"
+                  onClick={(e) => handleActionExpandClick(e, 'keyword')}
+                  title="Personalizza"
+                >
+                  <span className="context-menu-arrow">{expandedAction === 'keyword' ? '▼' : '▶'}</span>
+                </button>
+              </div>
 
               {expandedAction === 'keyword' && (
                 <div className="context-menu-action-submenu">
