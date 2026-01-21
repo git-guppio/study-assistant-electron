@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { getEmojiForIcon } from '../constants/annotations';
 import { getDatabase } from '../database/db';
+import MiniEditor from './MiniEditor';
 
 /**
  * Componente React per blocco nota TipTap
@@ -12,49 +13,38 @@ import { getDatabase } from '../database/db';
  * ├─────────────────────────────────────┤
  * │ > "Testo selezionato dal PDF..."    │  ← Blockquote
  * ├─────────────────────────────────────┤
- * │ [Commento editabile]                │  ← Textarea
+ * │ [Rich Text Editor con toolbar]      │  ← MiniEditor
  * └─────────────────────────────────────┘
  */
 function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }) {
   const { noteId, annotationId, pageNumber, selectionText, color, gutterIconId, comment } = node.attrs;
 
-  const [localComment, setLocalComment] = useState(comment || '');
+  // Recupera pdfDir e bookId dalle extension options
+  const { pdfDir, bookId } = extension.options;
+
+  // Debug: log extension options
+  console.log('🔧 PdfNoteBlockComponent extension options:', { pdfDir, bookId, noteId });
+
   const [isSaving, setIsSaving] = useState(false);
-  const saveTimeoutRef = useRef(null);
+  const lastSavedRef = useRef(comment);
 
-  // Debounced save: salva dopo 1.5s di inattività
-  useEffect(() => {
-    if (localComment === comment) return;
+  // Handler per salvare il commento
+  const handleCommentChange = useCallback(async (htmlContent) => {
+    // Non salvare se il contenuto è uguale
+    if (htmlContent === lastSavedRef.current) return;
 
-    // Mostra indicatore immediatamente quando cambia il commento
-    setIsSaving(true);
-
-    // Cancella timeout precedente
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    try {
+      const db = getDatabase();
+      if (db && noteId) {
+        await db.updateNote(noteId, { comment: htmlContent });
+        updateAttributes({ comment: htmlContent });
+        lastSavedRef.current = htmlContent;
+        console.log('💾 Rich comment saved:', noteId);
+      }
+    } catch (error) {
+      console.error('Error saving comment:', error);
     }
-
-    // Imposta nuovo timeout per salvare
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        const db = getDatabase();
-        if (db && noteId) {
-          await db.updateNote(noteId, { comment: localComment });
-          updateAttributes({ comment: localComment });
-          console.log('💾 Comment saved:', noteId);
-        }
-      } catch (error) {
-        console.error('Error saving comment:', error);
-      }
-      setIsSaving(false);
-    }, 1500);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [localComment, comment, noteId, updateAttributes]);
+  }, [noteId, updateAttributes]);
 
   const handleDelete = () => {
     // Callback passato dall'extension options
@@ -98,18 +88,21 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
       </div>
 
       {/* Blockquote - Testo dal PDF */}
-      <div className="pdf-note-block-quote">
-        {selectionText}
-      </div>
+      {selectionText && (
+        <div className="pdf-note-block-quote">
+          {selectionText}
+        </div>
+      )}
 
-      {/* Commento editabile */}
+      {/* Rich Text Comment Editor */}
       <div className="pdf-note-block-comment-wrapper">
-        <textarea
-          className="pdf-note-block-comment"
+        <MiniEditor
+          content={comment}
+          onChange={handleCommentChange}
           placeholder="Aggiungi un commento..."
-          value={localComment}
-          onChange={(e) => setLocalComment(e.target.value)}
-          rows={3}
+          pdfDir={pdfDir}
+          bookId={bookId}
+          onSavingChange={setIsSaving}
         />
         {isSaving && (
           <span className="pdf-note-block-saving-indicator">Salvataggio...</span>

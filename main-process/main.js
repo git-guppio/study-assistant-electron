@@ -1,6 +1,9 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+// Mappa per tenere traccia dei file immagine (id -> percorso)
+const imagePathMap = new Map();
 
 // Lazy load del modulo database per evitare conflitti con Electron
 let database = null;
@@ -82,9 +85,65 @@ function createWindow() {
   });
 }
 
+// Registra custom protocol per servire immagini locali in modo sicuro
+// Deve essere chiamato PRIMA di app.whenReady()
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-image',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+      corsEnabled: true
+    }
+  }
+]);
+
 // Quando Electron è pronto
 app.whenReady().then(() => {
   console.log('🚀🚀🚀 MAIN.JS LOADED - VERSION 2 WITH IPC LOGGING 🚀🚀🚀');
+
+  // Registra handler per il protocol local-image://
+  // Usa un ID semplice nell'URL: local-image://img_123456.png
+  // Il path reale viene recuperato dalla mappa imagePathMap
+  protocol.registerFileProtocol('local-image', (request, callback) => {
+    try {
+      console.log('🖼️ Protocol request URL:', request.url);
+
+      // Estrai l'ID immagine dall'URL
+      // URL: local-image://img_123456_abc.png o local-image://img_123456_abc.png/
+      let imageId = request.url.replace('local-image://', '');
+      imageId = decodeURIComponent(imageId);
+      // Rimuovi eventuali slash finali aggiunti dal browser
+      imageId = imageId.replace(/\/+$/, '');
+      console.log('🖼️ Image ID:', imageId);
+
+      // Cerca il percorso nella mappa
+      const filePath = imagePathMap.get(imageId);
+      console.log('🖼️ Mapped path:', filePath);
+
+      if (!filePath) {
+        console.error('❌ Image ID not found in map:', imageId);
+        callback({ error: -6 });
+        return;
+      }
+
+      // Verifica esistenza
+      if (!fs.existsSync(filePath)) {
+        console.error('❌ File not found on disk:', filePath);
+        callback({ error: -6 });
+        return;
+      }
+
+      console.log('🖼️ Serving file:', filePath);
+      callback({ path: filePath });
+    } catch (error) {
+      console.error('❌ Error in protocol handler:', error);
+      callback({ error: -2 });
+    }
+  });
+
   createWindow();
 
   app.on('activate', () => {
@@ -336,6 +395,137 @@ ipcMain.handle('db-delete-dictionary-entry', (event, id) => {
 // --- Keywords ---
 ipcMain.handle('db-get-keywords', () => {
   return getDatabase().getKeywords();
+});
+
+// ==================== IMAGE HANDLING ====================
+
+// Carica tutte le immagini esistenti nella mappa (da chiamare all'avvio)
+ipcMain.handle('load-images-map', async (event, { pdfDir, bookId }) => {
+  try {
+    const imagesDir = path.join(pdfDir, `${bookId}_images`);
+
+    if (!fs.existsSync(imagesDir)) {
+      console.log('🖼️ No images directory found:', imagesDir);
+      return { success: true, count: 0 };
+    }
+
+    const files = fs.readdirSync(imagesDir);
+    let count = 0;
+
+    for (const fileName of files) {
+      // Solo file immagine
+      if (/\.(png|jpg|jpeg|gif|webp|bmp)$/i.test(fileName)) {
+        const filePath = path.join(imagesDir, fileName);
+        imagePathMap.set(fileName, filePath);
+        count++;
+        console.log('🖼️ Loaded existing image:', fileName, '->', filePath);
+      }
+    }
+
+    console.log(`🖼️ Loaded ${count} existing images into map`);
+    return { success: true, count };
+  } catch (error) {
+    console.error('❌ Error loading images map:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Salva immagine su disco (da clipboard o file)
+ipcMain.handle('save-image-to-disk', async (event, { imageData, pdfDir, bookId }) => {
+  try {
+    // Crea cartella immagini se non esiste
+    const imagesDir = path.join(pdfDir, `${bookId}_images`);
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir, { recursive: true });
+    }
+
+    // Genera nome univoco con timestamp
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const fileName = `img_${timestamp}_${randomSuffix}.png`;
+    const filePath = path.join(imagesDir, fileName);
+
+    // imageData può essere base64 o buffer
+    let buffer;
+    if (typeof imageData === 'string') {
+      // Rimuovi prefisso data:image/...;base64, se presente
+      const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+      buffer = Buffer.from(base64Data, 'base64');
+    } else {
+      buffer = Buffer.from(imageData);
+    }
+
+    fs.writeFileSync(filePath, buffer);
+    console.log('🖼️ Image saved:', filePath);
+
+    // Registra il path nella mappa usando il filename come ID
+    imagePathMap.set(fileName, filePath);
+    console.log('🖼️ Registered in map:', fileName, '->', filePath);
+
+    // URL semplice con solo il filename
+    const imageUrl = `local-image://${fileName}`;
+
+    return {
+      success: true,
+      filePath: filePath,
+      imageUrl: imageUrl,  // URL da usare nell'editor
+      relativePath: `${bookId}_images/${fileName}`
+    };
+  } catch (error) {
+    console.error('❌ Error saving image:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Leggi immagine da disco
+ipcMain.handle('read-image-from-disk', async (event, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error('Image file not found');
+    }
+    const buffer = fs.readFileSync(filePath);
+    const base64 = buffer.toString('base64');
+    const ext = path.extname(filePath).toLowerCase().slice(1) || 'png';
+    return {
+      success: true,
+      dataUrl: `data:image/${ext};base64,${base64}`
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Seleziona file immagine con dialog
+ipcMain.handle('select-image-file', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Seleziona immagine',
+    filters: [
+      { name: 'Immagini', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }
+    ],
+    properties: ['openFile']
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+  const buffer = fs.readFileSync(filePath);
+  const base64 = buffer.toString('base64');
+  const ext = path.extname(filePath).toLowerCase().slice(1) || 'png';
+
+  return {
+    success: true,
+    filePath: filePath,
+    dataUrl: `data:image/${ext};base64,${base64}`
+  };
 });
 
 ipcMain.handle('db-get-keyword', (event, id) => {

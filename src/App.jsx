@@ -9,6 +9,7 @@ function App() {
   const [bookInfo, setBookInfo] = useState(null);
   const [activeTab, setActiveTab] = useState('notes');
   const [pdfPath, setPdfPath] = useState(null);
+  const [pdfDir, setPdfDir] = useState(null);
   const [annotations, setAnnotations] = useState([]);
   const [dbReady, setDbReady] = useState(false);
 
@@ -31,9 +32,15 @@ function App() {
 
         // Inizializza database
         if (info.filePath && info.bookId) {
-          const pdfDir = await window.electronAPI.getPdfDirectory(info.filePath);
-          if (pdfDir) {
-            await initDatabase(pdfDir, info.bookId);
+          const dir = await window.electronAPI.getPdfDirectory(info.filePath);
+          if (dir) {
+            setPdfDir(dir);
+            await initDatabase(dir, info.bookId);
+
+            // Carica mappa immagini esistenti per il custom protocol
+            const imagesResult = await window.electronAPI.loadImagesMap(dir, info.bookId);
+            console.log('🖼️ Images map loaded:', imagesResult);
+
             setDbReady(true);
           }
         } else {
@@ -385,6 +392,7 @@ function App() {
           <NotesEditor
             ref={notesEditorRef}
             bookId={bookInfo?.bookId}
+            pdfDir={pdfDir}
             dbReady={dbReady}
             onDeleteNote={handleDeleteNote}
             onNavigateToPdf={handleNavigateToPdf}

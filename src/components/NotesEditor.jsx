@@ -1,14 +1,17 @@
-import { useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
+import Underline from '@tiptap/extension-underline';
 import { PdfNoteBlock } from '../extensions/PdfNoteBlock';
 import { getDatabase } from '../database/db';
 
-const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteNote, onNavigateToPdf }, ref) {
+const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, onDeleteNote, onNavigateToPdf }, ref) {
 
+  // Aspetta che pdfDir e bookId siano disponibili prima di creare l'editor
+  // Questo è necessario perché TipTap non aggiorna le extension options dopo la creazione
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -19,9 +22,12 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
       Highlight.configure({
         multicolor: true,
       }),
+      Underline,
       PdfNoteBlock.configure({
         onDeleteNote: onDeleteNote,
         onNavigateToPdf: onNavigateToPdf,
+        pdfDir: pdfDir,
+        bookId: bookId,
       }),
     ],
     content: '<p>Inizia a scrivere le tue note qui...</p>',
@@ -30,7 +36,12 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
         class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] p-4',
       },
     },
-  });
+  }, [pdfDir, bookId]); // Ricrea l'editor quando pdfDir o bookId cambiano
+
+  // Log per debug
+  useEffect(() => {
+    console.log('🔧 NotesEditor props:', { pdfDir, bookId, dbReady, hasEditor: !!editor });
+  }, [pdfDir, bookId, dbReady, editor]);
 
   // Esponi metodi via ref
   useImperativeHandle(ref, () => ({
@@ -141,14 +152,15 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
   }), [editor]);
 
   // Carica note esistenti e le inserisce come blocchi
+  // Attende che pdfDir sia disponibile perché l'editor viene ricreato quando cambia pdfDir
   useEffect(() => {
-    if (editor && dbReady) {
-      console.log('📥 Editor AND DB ready, loading notes...', { bookId, dbReady });
+    if (editor && dbReady && pdfDir) {
+      console.log('📥 Editor AND DB ready, loading notes...', { bookId, pdfDir, dbReady });
       loadNotes();
     } else {
-      console.log('⏳ Waiting for editor and DB...', { editor: !!editor, dbReady });
+      console.log('⏳ Waiting for editor, DB and pdfDir...', { editor: !!editor, dbReady, pdfDir });
     }
-  }, [editor, dbReady]);
+  }, [editor, dbReady, pdfDir]);
 
 
   const loadNotes = async () => {
@@ -232,6 +244,102 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
     }
   };
 
+  // Inserisce immagine da file locale (via dialog)
+  const addImageFromFile = useCallback(async () => {
+    if (!editor || !window.electronAPI) return;
+
+    try {
+      const result = await window.electronAPI.selectImageFile();
+      if (result.success && result.dataUrl) {
+        // Salva l'immagine su disco
+        const saveResult = await window.electronAPI.saveImageToDisk(
+          result.dataUrl,
+          pdfDir,
+          bookId
+        );
+
+        if (saveResult.success) {
+          // Usa l'URL con custom protocol per caricamento sicuro
+          editor.chain().focus().setImage({ src: saveResult.imageUrl }).run();
+          console.log('🖼️ Image inserted from file:', saveResult.imageUrl);
+        } else {
+          console.error('❌ Failed to save image:', saveResult.error);
+          alert('Errore nel salvare l\'immagine: ' + saveResult.error);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error selecting image:', error);
+      alert('Errore nella selezione dell\'immagine');
+    }
+  }, [editor, pdfDir, bookId]);
+
+  // Handler per incollare immagini dalla clipboard
+  const handlePaste = useCallback(async (event) => {
+    if (!editor || !window.electronAPI || !pdfDir || !bookId) return;
+
+    // Verifica che l'evento provenga dall'editor principale, non dal MiniEditor
+    // Il MiniEditor è dentro .mini-editor, l'editor principale no
+    const target = event.target;
+    if (target.closest('.mini-editor')) {
+      // L'evento proviene da un MiniEditor, lascia che lo gestisca lui
+      return;
+    }
+
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        event.preventDefault();
+
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        try {
+          // Converti il file in base64
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            const dataUrl = e.target?.result;
+            if (typeof dataUrl !== 'string') return;
+
+            // Salva l'immagine su disco
+            const saveResult = await window.electronAPI.saveImageToDisk(
+              dataUrl,
+              pdfDir,
+              bookId
+            );
+
+            if (saveResult.success) {
+              editor.chain().focus().setImage({ src: saveResult.imageUrl }).run();
+              console.log('🖼️ Image pasted from clipboard:', saveResult.imageUrl);
+            } else {
+              console.error('❌ Failed to save pasted image:', saveResult.error);
+            }
+          };
+          reader.readAsDataURL(file);
+        } catch (error) {
+          console.error('❌ Error processing pasted image:', error);
+        }
+
+        break; // Processa solo la prima immagine
+      }
+    }
+  }, [editor, pdfDir, bookId]);
+
+  // Registra il paste handler sull'editor principale
+  useEffect(() => {
+    if (!editor) return;
+
+    // Usa editor.view.dom per ottenere l'elemento DOM specifico di questo editor
+    const editorElement = editor.view.dom;
+    if (editorElement) {
+      editorElement.addEventListener('paste', handlePaste);
+      return () => {
+        editorElement.removeEventListener('paste', handlePaste);
+      };
+    }
+  }, [editor, handlePaste]);
+
   if (!editor) {
     return <div className="p-4">Caricamento editor...</div>;
   }
@@ -240,14 +348,34 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="border-b border-gray-200 p-2 bg-gray-50">
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 items-center">
+          {/* Undo/Redo */}
+          <button
+            onClick={() => editor.chain().focus().undo().run()}
+            disabled={!editor.can().undo()}
+            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white disabled:opacity-40 disabled:cursor-not-allowed`}
+            title="Annulla (Ctrl+Z)"
+          >
+            ↶
+          </button>
+          <button
+            onClick={() => editor.chain().focus().redo().run()}
+            disabled={!editor.can().redo()}
+            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white disabled:opacity-40 disabled:cursor-not-allowed`}
+            title="Ripeti (Ctrl+Y)"
+          >
+            ↷
+          </button>
+
+          <div className="w-px bg-gray-300 mx-1 h-6"></div>
+
           {/* Text Formatting */}
           <button
             onClick={() => editor.chain().focus().toggleBold().run()}
             className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
               editor.isActive('bold') ? 'bg-gray-300' : 'bg-white'
             }`}
-            title="Grassetto"
+            title="Grassetto (Ctrl+B)"
           >
             <strong>B</strong>
           </button>
@@ -256,9 +384,18 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
             className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
               editor.isActive('italic') ? 'bg-gray-300' : 'bg-white'
             }`}
-            title="Corsivo"
+            title="Corsivo (Ctrl+I)"
           >
             <em>I</em>
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
+              editor.isActive('underline') ? 'bg-gray-300' : 'bg-white'
+            }`}
+            title="Sottolineato (Ctrl+U)"
+          >
+            <u>U</u>
           </button>
           <button
             onClick={() => editor.chain().focus().toggleStrike().run()}
@@ -269,8 +406,17 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
           >
             <s>S</s>
           </button>
+          <button
+            onClick={() => editor.chain().focus().toggleCode().run()}
+            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 font-mono ${
+              editor.isActive('code') ? 'bg-gray-300' : 'bg-white'
+            }`}
+            title="Codice inline"
+          >
+            {'</>'}
+          </button>
 
-          <div className="w-px bg-gray-300 mx-1"></div>
+          <div className="w-px bg-gray-300 mx-1 h-6"></div>
 
           {/* Headings */}
           <button
@@ -301,7 +447,7 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
             H3
           </button>
 
-          <div className="w-px bg-gray-300 mx-1"></div>
+          <div className="w-px bg-gray-300 mx-1 h-6"></div>
 
           {/* Lists */}
           <button
@@ -323,9 +469,9 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
             1. List
           </button>
 
-          <div className="w-px bg-gray-300 mx-1"></div>
+          <div className="w-px bg-gray-300 mx-1 h-6"></div>
 
-          {/* Other */}
+          {/* Blocks */}
           <button
             onClick={() => editor.chain().focus().toggleBlockquote().run()}
             className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
@@ -336,6 +482,26 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
             " Quote
           </button>
           <button
+            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 font-mono ${
+              editor.isActive('codeBlock') ? 'bg-gray-300' : 'bg-white'
+            }`}
+            title="Blocco codice"
+          >
+            {'{ }'}
+          </button>
+          <button
+            onClick={() => editor.chain().focus().setHorizontalRule().run()}
+            className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
+            title="Linea orizzontale"
+          >
+            ―
+          </button>
+
+          <div className="w-px bg-gray-300 mx-1 h-6"></div>
+
+          {/* Highlight & Links */}
+          <button
             onClick={() => editor.chain().focus().toggleHighlight().run()}
             className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
               editor.isActive('highlight') ? 'bg-gray-300' : 'bg-white'
@@ -345,18 +511,31 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, dbReady, onDeleteN
             Highlight
           </button>
           <button
-            onClick={addImage}
-            className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
-            title="Inserisci immagine"
-          >
-            Immagine
-          </button>
-          <button
             onClick={addLink}
-            className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
+            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
+              editor.isActive('link') ? 'bg-gray-300' : 'bg-white'
+            }`}
             title="Inserisci link"
           >
             Link
+          </button>
+
+          <div className="w-px bg-gray-300 mx-1 h-6"></div>
+
+          {/* Images */}
+          <button
+            onClick={addImage}
+            className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
+            title="Inserisci immagine da URL"
+          >
+            🖼 URL
+          </button>
+          <button
+            onClick={addImageFromFile}
+            className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
+            title="Inserisci immagine da file"
+          >
+            🖼 File
           </button>
         </div>
       </div>

@@ -84,5 +84,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbGetKeyword: (id) => ipcRenderer.invoke('db-get-keyword', id),
   dbSaveKeyword: (data) => ipcRenderer.invoke('db-save-keyword', data),
   dbUpdateKeyword: (id, updates) => ipcRenderer.invoke('db-update-keyword', { id, updates }),
-  dbDeleteKeyword: (id) => ipcRenderer.invoke('db-delete-keyword', id)
+  dbDeleteKeyword: (id) => ipcRenderer.invoke('db-delete-keyword', id),
+
+  // ==================== IMAGE API ====================
+  loadImagesMap: (pdfDir, bookId) =>
+    ipcRenderer.invoke('load-images-map', { pdfDir, bookId }),
+  saveImageToDisk: (imageData, pdfDir, bookId) =>
+    ipcRenderer.invoke('save-image-to-disk', { imageData, pdfDir, bookId }),
+  readImageFromDisk: (filePath) => ipcRenderer.invoke('read-image-from-disk', filePath),
+  selectImageFile: () => ipcRenderer.invoke('select-image-file')
 });
