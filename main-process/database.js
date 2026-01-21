@@ -181,6 +181,7 @@ function createTables() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       term TEXT NOT NULL,
       definition TEXT,
+      pageNumber INTEGER,
       annotationId INTEGER,
       createdAt TEXT DEFAULT (datetime('now')),
       updatedAt TEXT DEFAULT (datetime('now')),
@@ -193,7 +194,8 @@ function createTables() {
     CREATE TABLE IF NOT EXISTS keywords (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       keyword TEXT NOT NULL,
-      context TEXT,
+      comment TEXT,
+      pageNumber INTEGER,
       annotationId INTEGER,
       createdAt TEXT DEFAULT (datetime('now')),
       updatedAt TEXT DEFAULT (datetime('now')),
@@ -227,8 +229,9 @@ function createTables() {
   db.run(`CREATE INDEX IF NOT EXISTS idx_dictionary_annotation ON dictionary_entries(annotationId)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_keywords_annotation ON keywords(annotationId)`);
 
-  // Migrazione: converti vecchi 'outline' in 'note'
+  // Migrazioni
   migrateOutlineToNote();
+  migrateDictionaryAndKeywords();
 }
 
 /**
@@ -245,6 +248,42 @@ function migrateOutlineToNote() {
     }
   } catch (error) {
     console.error('[SQLite] Errore migrazione outline:', error);
+  }
+}
+
+/**
+ * Aggiunge colonne mancanti a dictionary_entries e keywords per database esistenti
+ */
+function migrateDictionaryAndKeywords() {
+  try {
+    // Aggiungi pageNumber a dictionary_entries se non esiste
+    const dictColumns = db.exec("PRAGMA table_info(dictionary_entries)");
+    if (dictColumns.length > 0) {
+      const dictColNames = dictColumns[0].values.map(row => row[1]);
+      if (!dictColNames.includes('pageNumber')) {
+        db.run("ALTER TABLE dictionary_entries ADD COLUMN pageNumber INTEGER");
+        console.log('[SQLite] Aggiunta colonna pageNumber a dictionary_entries');
+        saveToFile();
+      }
+    }
+
+    // Aggiungi pageNumber e comment a keywords se non esistono
+    const kwColumns = db.exec("PRAGMA table_info(keywords)");
+    if (kwColumns.length > 0) {
+      const kwColNames = kwColumns[0].values.map(row => row[1]);
+      if (!kwColNames.includes('pageNumber')) {
+        db.run("ALTER TABLE keywords ADD COLUMN pageNumber INTEGER");
+        console.log('[SQLite] Aggiunta colonna pageNumber a keywords');
+        saveToFile();
+      }
+      if (!kwColNames.includes('comment')) {
+        db.run("ALTER TABLE keywords ADD COLUMN comment TEXT");
+        console.log('[SQLite] Aggiunta colonna comment a keywords');
+        saveToFile();
+      }
+    }
+  } catch (error) {
+    console.error('[SQLite] Errore migrazione dictionary/keywords:', error);
   }
 }
 
@@ -659,9 +698,9 @@ function getDictionaryEntryById(id) {
 
 function saveDictionaryEntry(data) {
   const result = runQuery(
-    `INSERT INTO dictionary_entries (term, definition, annotationId)
-     VALUES (?, ?, ?)`,
-    [data.term, data.definition || '', data.annotationId || null]
+    `INSERT INTO dictionary_entries (term, definition, pageNumber, annotationId)
+     VALUES (?, ?, ?, ?)`,
+    [data.term, data.definition || '', data.pageNumber || null, data.annotationId || null]
   );
   return getDictionaryEntryById(result.lastInsertRowid);
 }
@@ -703,10 +742,12 @@ function getKeywordById(id) {
 }
 
 function saveKeyword(data) {
+  // Supporta sia 'term' (dal frontend) che 'keyword' (per retrocompatibilità)
+  const keyword = data.term || data.keyword;
   const result = runQuery(
-    `INSERT INTO keywords (keyword, context, annotationId)
-     VALUES (?, ?, ?)`,
-    [data.keyword, data.context || '', data.annotationId || null]
+    `INSERT INTO keywords (keyword, comment, pageNumber, annotationId)
+     VALUES (?, ?, ?, ?)`,
+    [keyword, data.comment || '', data.pageNumber || null, data.annotationId || null]
   );
   return getKeywordById(result.lastInsertRowid);
 }
@@ -715,13 +756,14 @@ function updateKeyword(id, updates) {
   const fields = [];
   const values = [];
 
-  if (updates.keyword !== undefined) {
+  // Supporta sia 'term' che 'keyword'
+  if (updates.term !== undefined || updates.keyword !== undefined) {
     fields.push('keyword = ?');
-    values.push(updates.keyword);
+    values.push(updates.term || updates.keyword);
   }
-  if (updates.context !== undefined) {
-    fields.push('context = ?');
-    values.push(updates.context);
+  if (updates.comment !== undefined) {
+    fields.push('comment = ?');
+    values.push(updates.comment);
   }
 
   if (fields.length === 0) return getKeywordById(id);

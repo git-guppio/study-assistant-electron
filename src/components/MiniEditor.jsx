@@ -5,9 +5,13 @@ import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import Underline from '@tiptap/extension-underline';
+import { useEditorContext } from '../contexts/EditorContext';
 
 /**
  * MiniEditor - Editor TipTap compatto per commenti delle note PDF
+ *
+ * SENZA toolbar locale - usa la toolbar principale tramite EditorContext
+ * Si espande per occupare tutto lo spazio disponibile nella scheda nota
  *
  * Supporta: Bold, Italic, Underline, Strike, Lists, Links, Images
  * Salvataggio automatico con debounce
@@ -18,22 +22,18 @@ function MiniEditor({
   placeholder = 'Aggiungi un commento...',
   pdfDir,
   bookId,
+  noteId, // ID univoco per identificare questo MiniEditor
   onSavingChange // callback per notificare stato salvataggio
 }) {
   const saveTimeoutRef = useRef(null);
   const lastSavedContentRef = useRef(content);
 
-  // Debug: log props ricevute
-  useEffect(() => {
-    console.log('🔧 MiniEditor mounted/updated:', { pdfDir, bookId, contentLength: content?.length });
-  }, [pdfDir, bookId, content]);
+  // Context per registrare questo editor come attivo
+  const { setMiniEditorActive, clearMiniEditorActive, activeMiniEditorId } = useEditorContext();
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        heading: false, // No headings in mini editor
-        codeBlock: false, // No code blocks
-      }),
+      StarterKit,
       Image,
       Link.configure({
         openOnClick: false,
@@ -68,6 +68,32 @@ function MiniEditor({
         if (onSavingChange) onSavingChange(false);
       }, 1500);
     },
+    onFocus: () => {
+      // Quando questo editor riceve focus, diventa l'editor attivo
+      if (editor) {
+        setMiniEditorActive(editor, noteId);
+      }
+    },
+    onBlur: ({ event }) => {
+      // Quando perde focus, controlla se il focus va a un altro elemento dentro lo stesso editor
+      // Se il focus va completamente fuori, torna all'editor principale
+      const relatedTarget = event.relatedTarget;
+
+      // Se il focus va a un elemento dentro la stessa nota o toolbar, non resettare
+      if (relatedTarget) {
+        const isInsideNote = relatedTarget.closest?.(`[data-note-id="${noteId}"]`);
+        const isInsideToolbar = relatedTarget.closest?.('.notes-editor-toolbar');
+        if (isInsideNote || isInsideToolbar) {
+          return;
+        }
+      }
+
+      // Piccolo delay per permettere al nuovo elemento di ricevere focus
+      setTimeout(() => {
+        // Se nessun altro MiniEditor ha preso il focus, torna al principale
+        // Questo viene gestito automaticamente quando un altro MiniEditor chiama setMiniEditorActive
+      }, 100);
+    },
   });
 
   // Cleanup timeout on unmount
@@ -81,9 +107,7 @@ function MiniEditor({
 
   // Handle paste images
   const handlePaste = useCallback(async (event) => {
-    console.log('🖼️ MiniEditor paste event', { editor: !!editor, electronAPI: !!window.electronAPI, pdfDir, bookId });
     if (!editor || !window.electronAPI || !pdfDir || !bookId) {
-      console.log('❌ MiniEditor paste aborted - missing dependencies');
       return;
     }
 
@@ -136,119 +160,16 @@ function MiniEditor({
     }
   }, [editor, handlePaste]);
 
-  // Insert image from file
-  const insertImageFromFile = useCallback(async () => {
-    if (!editor || !window.electronAPI) return;
-
-    try {
-      const result = await window.electronAPI.selectImageFile();
-      if (result.success && result.dataUrl) {
-        const saveResult = await window.electronAPI.saveImageToDisk(
-          result.dataUrl,
-          pdfDir,
-          bookId
-        );
-
-        if (saveResult.success) {
-          editor.chain().focus().setImage({ src: saveResult.imageUrl }).run();
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error inserting image:', error);
-    }
-  }, [editor, pdfDir, bookId]);
-
   if (!editor) {
     return <div className="mini-editor-loading">Caricamento...</div>;
   }
 
+  // Classe per evidenziare quando questo è l'editor attivo
+  const isActive = activeMiniEditorId === noteId;
+
   return (
-    <div className="mini-editor">
-      {/* Compact Toolbar */}
-      <div className="mini-editor-toolbar">
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          className={editor.isActive('bold') ? 'active' : ''}
-          title="Grassetto (Ctrl+B)"
-        >
-          <strong>B</strong>
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={editor.isActive('italic') ? 'active' : ''}
-          title="Corsivo (Ctrl+I)"
-        >
-          <em>I</em>
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-          className={editor.isActive('underline') ? 'active' : ''}
-          title="Sottolineato (Ctrl+U)"
-        >
-          <u>U</u>
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-          className={editor.isActive('strike') ? 'active' : ''}
-          title="Barrato"
-        >
-          <s>S</s>
-        </button>
-
-        <span className="mini-editor-separator"></span>
-
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={editor.isActive('bulletList') ? 'active' : ''}
-          title="Elenco puntato"
-        >
-          •
-        </button>
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={editor.isActive('orderedList') ? 'active' : ''}
-          title="Elenco numerato"
-        >
-          1.
-        </button>
-
-        <span className="mini-editor-separator"></span>
-
-        <button
-          type="button"
-          onClick={() => editor.chain().focus().toggleHighlight().run()}
-          className={editor.isActive('highlight') ? 'active' : ''}
-          title="Evidenzia"
-        >
-          H
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            const url = prompt('Inserisci URL:');
-            if (url) editor.chain().focus().setLink({ href: url }).run();
-          }}
-          className={editor.isActive('link') ? 'active' : ''}
-          title="Link"
-        >
-          🔗
-        </button>
-        <button
-          type="button"
-          onClick={insertImageFromFile}
-          title="Inserisci immagine"
-        >
-          🖼
-        </button>
-      </div>
-
-      {/* Editor Content */}
+    <div className={`mini-editor mini-editor-expanded ${isActive ? 'mini-editor-active' : ''}`}>
+      {/* Editor Content - occupa tutto lo spazio disponibile */}
       <EditorContent editor={editor} />
     </div>
   );

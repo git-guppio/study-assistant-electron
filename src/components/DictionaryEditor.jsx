@@ -5,11 +5,11 @@ import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import Underline from '@tiptap/extension-underline';
-import { PdfNoteBlock } from '../extensions/PdfNoteBlock';
+import { DictionaryBlock } from '../extensions/DictionaryBlock';
 import { getDatabase } from '../database/db';
 import { useEditorContext } from '../contexts/EditorContext';
 
-const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, onDeleteNote, onNavigateToPdf }, ref) {
+const DictionaryEditor = forwardRef(function DictionaryEditor({ bookId, pdfDir, dbReady, onDeleteEntry, onNavigateToPdf }, ref) {
 
   // Context per gestire l'editor attivo (principale o MiniEditor)
   const { registerMainEditor, activeEditor, activeMiniEditorId } = useEditorContext();
@@ -26,14 +26,14 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
         multicolor: true,
       }),
       Underline,
-      PdfNoteBlock.configure({
-        onDeleteNote: onDeleteNote,
+      DictionaryBlock.configure({
+        onDeleteEntry: onDeleteEntry,
         onNavigateToPdf: onNavigateToPdf,
         pdfDir: pdfDir,
         bookId: bookId,
       }),
     ],
-    content: '<p>Inizia a scrivere le tue note qui...</p>',
+    content: '',
     editorProps: {
       attributes: {
         class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] p-4',
@@ -50,20 +50,19 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
 
   // Esponi metodi via ref
   useImperativeHandle(ref, () => ({
-    insertPdfNoteBlock: (noteData) => {
+    insertDictionaryBlock: (entryData) => {
       if (!editor) return;
 
       const newBlock = {
-        type: 'pdfNoteBlock',
+        type: 'dictionaryBlock',
         attrs: {
-          noteId: noteData.id,
-          annotationId: noteData.annotationId,
-          pageNumber: noteData.pageNumber,
-          positionY: noteData.positionY || 0,
-          selectionText: noteData.selectionText,
-          color: noteData.color,
-          gutterIconId: noteData.gutterIconId,
-          comment: noteData.comment || '',
+          entryId: entryData.id,
+          annotationId: entryData.annotationId,
+          pageNumber: entryData.pageNumber,
+          positionY: entryData.positionY || 0,
+          term: entryData.term,
+          color: entryData.color,
+          definition: entryData.definition || '',
         },
       };
 
@@ -71,13 +70,13 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
       let insertPosition = doc.content.size;
       let found = false;
 
-      const newPage = noteData.pageNumber || 0;
-      const newY = noteData.positionY || 0;
+      const newPage = entryData.pageNumber || 0;
+      const newY = entryData.positionY || 0;
 
       doc.descendants((node, pos) => {
         if (found) return false;
 
-        if (node.type.name === 'pdfNoteBlock') {
+        if (node.type.name === 'dictionaryBlock') {
           const existingPage = node.attrs.pageNumber || 0;
           const existingY = node.attrs.positionY || 0;
 
@@ -95,10 +94,10 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
         .insertContentAt(insertPosition, newBlock)
         .run();
 
-      console.log('📝 Note block inserted at position', insertPosition, ':', noteData.id);
+      console.log('📖 Dictionary block inserted at position', insertPosition, ':', entryData.id);
     },
 
-    removePdfNoteBlock: (noteId) => {
+    removeDictionaryBlock: (entryId) => {
       if (!editor) return;
 
       const { state, view } = editor;
@@ -106,88 +105,100 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
       let found = false;
 
       doc.descendants((node, pos) => {
-        if (node.type.name === 'pdfNoteBlock' && node.attrs.noteId === noteId) {
+        if (node.type.name === 'dictionaryBlock' && node.attrs.entryId === entryId) {
           const transaction = tr.delete(pos, pos + node.nodeSize);
           view.dispatch(transaction);
           found = true;
-          console.log('🗑️ Note block removed:', noteId);
+          console.log('🗑️ Dictionary block removed:', entryId);
           return false;
         }
       });
 
       if (!found) {
-        console.warn('⚠️ Note block not found in editor:', noteId);
+        console.warn('⚠️ Dictionary block not found in editor:', entryId);
       }
     },
 
-    scrollToBlock: (noteId) => {
-      const noteElement = document.querySelector(`[data-note-id="${noteId}"]`);
+    scrollToBlock: (entryId) => {
+      const entryElement = document.querySelector(`[data-entry-id="${entryId}"]`);
 
-      if (noteElement) {
-        noteElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        noteElement.classList.add('note-flash');
+      if (entryElement) {
+        entryElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        entryElement.classList.add('dictionary-flash');
         setTimeout(() => {
-          noteElement.classList.remove('note-flash');
+          entryElement.classList.remove('dictionary-flash');
+        }, 2000);
+      }
+    },
+
+    // Scrolla al blocco usando annotationId (per navigazione dal gutter)
+    scrollToBlockByAnnotationId: (annotationId) => {
+      const element = document.querySelector(`.dictionary-block[data-annotation-id="${annotationId}"]`);
+
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        element.classList.add('dictionary-flash');
+        setTimeout(() => {
+          element.classList.remove('dictionary-flash');
         }, 2000);
       }
     }
   }), [editor]);
 
-  // Carica note esistenti
+  // Carica voci dizionario esistenti
   useEffect(() => {
     if (editor && dbReady && pdfDir) {
-      loadNotes();
+      loadDictionaryEntries();
     }
   }, [editor, dbReady, pdfDir]);
 
-  const loadNotes = async () => {
+  const loadDictionaryEntries = async () => {
     const db = getDatabase();
     if (!db || !editor) return;
 
     try {
-      const savedNotes = await db.getNotes();
+      const entries = await db.getDictionaryEntries();
+      const annotations = await db.getAnnotations();
 
-      if (savedNotes.length > 0) {
+      if (entries.length > 0) {
         const blocks = [];
 
-        savedNotes.forEach((note) => {
-          if (note.annotationId) {
-            const annotation = note.annotation;
-            const positionY = note.pdfCoordinates?.y || 0;
+        entries.forEach((entry) => {
+          // Trova l'annotazione collegata
+          const annotation = annotations.find(a =>
+            a.type === 'dictionary' && a.text === entry.term && a.pageNumber === entry.pageNumber
+          );
 
-            blocks.push({
-              type: 'pdfNoteBlock',
-              attrs: {
-                noteId: note.id,
-                annotationId: note.annotationId,
-                pageNumber: note.pageNumber || 1,
-                positionY: positionY,
-                selectionText: note.selectionText || '',
-                color: annotation?.color || '#22c55e',
-                gutterIconId: annotation?.gutterIconId || 'note',
-                comment: note.comment || '',
-              },
-            });
-          }
+          blocks.push({
+            type: 'dictionaryBlock',
+            attrs: {
+              entryId: entry.id,
+              annotationId: annotation?.id || null,
+              pageNumber: entry.pageNumber || 1,
+              positionY: 0,
+              term: entry.term || '',
+              color: annotation?.color || '#8b5cf6',
+              definition: entry.definition || '',
+            },
+          });
         });
 
         blocks.sort((a, b) => {
           const pageA = a.attrs.pageNumber;
           const pageB = b.attrs.pageNumber;
           if (pageA !== pageB) return pageA - pageB;
-          return a.attrs.positionY - b.attrs.positionY;
+          return a.attrs.term.localeCompare(b.attrs.term);
         });
 
         editor.commands.setContent(blocks);
-        console.log('📚 Loaded', blocks.length, 'notes as blocks');
+        console.log('📖 Loaded', blocks.length, 'dictionary entries as blocks');
       }
     } catch (error) {
-      console.error('❌ Error loading notes:', error);
+      console.error('❌ Error loading dictionary entries:', error);
     }
   };
 
   // ============ TOOLBAR HANDLERS ============
-  // Questi usano activeEditor dal context (può essere editor principale o MiniEditor)
 
   const handleAddImage = () => {
     const url = prompt('Inserisci URL immagine:');
@@ -229,11 +240,10 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
     }
   }, [activeEditor, pdfDir, bookId]);
 
-  // Handler per incollare immagini dalla clipboard (solo editor principale)
+  // Handler per incollare immagini dalla clipboard
   const handlePaste = useCallback(async (event) => {
     if (!editor || !window.electronAPI || !pdfDir || !bookId) return;
 
-    // Se un MiniEditor è attivo, lascia che gestisca lui
     if (event.target.closest('.mini-editor')) {
       return;
     }
@@ -275,7 +285,7 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
     }
   }, [editor, pdfDir, bookId]);
 
-  // Registra il paste handler sull'editor principale
+  // Registra il paste handler
   useEffect(() => {
     if (!editor) return;
 
@@ -289,20 +299,18 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
   }, [editor, handlePaste]);
 
   if (!editor) {
-    return <div className="p-4">Caricamento editor...</div>;
+    return <div className="p-4">Caricamento editor dizionario...</div>;
   }
 
-  // Indica se un MiniEditor è attivo (per feedback visivo nella toolbar)
   const isMiniEditorActive = activeMiniEditorId !== null;
 
   return (
     <div className="flex flex-col h-full">
-      {/* Toolbar - comanda l'editor attivo (principale o MiniEditor) */}
+      {/* Toolbar */}
       <div className="notes-editor-toolbar border-b border-gray-200 p-2 bg-gray-50 sticky top-0 z-10">
-        {/* Indicatore editor attivo */}
         {isMiniEditorActive && (
-          <div className="text-xs text-blue-600 mb-1 font-medium">
-            ✏️ Modificando commento nota
+          <div className="text-xs text-purple-600 mb-1 font-medium">
+            ✏️ Modificando definizione
           </div>
         )}
 
@@ -364,46 +372,6 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
           >
             <s>S</s>
           </button>
-          <button
-            onClick={() => activeEditor?.chain().focus().toggleCode().run()}
-            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 font-mono ${
-              activeEditor?.isActive('code') ? 'bg-gray-300' : 'bg-white'
-            }`}
-            title="Codice inline"
-          >
-            {'</>'}
-          </button>
-
-          <div className="w-px bg-gray-300 mx-1 h-6"></div>
-
-          {/* Headings */}
-          <button
-            onClick={() => activeEditor?.chain().focus().toggleHeading({ level: 1 }).run()}
-            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
-              activeEditor?.isActive('heading', { level: 1 }) ? 'bg-gray-300' : 'bg-white'
-            }`}
-            title="Titolo 1"
-          >
-            H1
-          </button>
-          <button
-            onClick={() => activeEditor?.chain().focus().toggleHeading({ level: 2 }).run()}
-            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
-              activeEditor?.isActive('heading', { level: 2 }) ? 'bg-gray-300' : 'bg-white'
-            }`}
-            title="Titolo 2"
-          >
-            H2
-          </button>
-          <button
-            onClick={() => activeEditor?.chain().focus().toggleHeading({ level: 3 }).run()}
-            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
-              activeEditor?.isActive('heading', { level: 3 }) ? 'bg-gray-300' : 'bg-white'
-            }`}
-            title="Titolo 3"
-          >
-            H3
-          </button>
 
           <div className="w-px bg-gray-300 mx-1 h-6"></div>
 
@@ -425,35 +393,6 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
             title="Elenco numerato"
           >
             1. List
-          </button>
-
-          <div className="w-px bg-gray-300 mx-1 h-6"></div>
-
-          {/* Blocks */}
-          <button
-            onClick={() => activeEditor?.chain().focus().toggleBlockquote().run()}
-            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 ${
-              activeEditor?.isActive('blockquote') ? 'bg-gray-300' : 'bg-white'
-            }`}
-            title="Citazione"
-          >
-            " Quote
-          </button>
-          <button
-            onClick={() => activeEditor?.chain().focus().toggleCodeBlock().run()}
-            className={`px-2 py-1 text-sm rounded hover:bg-gray-200 font-mono ${
-              activeEditor?.isActive('codeBlock') ? 'bg-gray-300' : 'bg-white'
-            }`}
-            title="Blocco codice"
-          >
-            {'{ }'}
-          </button>
-          <button
-            onClick={() => activeEditor?.chain().focus().setHorizontalRule().run()}
-            className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
-            title="Linea orizzontale"
-          >
-            ―
           </button>
 
           <div className="w-px bg-gray-300 mx-1 h-6"></div>
@@ -506,4 +445,4 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
   );
 });
 
-export default NotesEditor;
+export default DictionaryEditor;

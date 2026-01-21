@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PDFViewer from './components/PDFViewer';
 import NotesEditor from './components/NotesEditor';
+import DictionaryEditor from './components/DictionaryEditor';
+import KeywordsEditor from './components/KeywordsEditor';
 import MindMap from './components/MindMap';
 import SummaryEditor from './components/SummaryEditor';
 import { initDatabase, getDatabase } from './database/db';
+import { EditorProvider } from './contexts/EditorContext';
 
 function App() {
   const [bookInfo, setBookInfo] = useState(null);
@@ -20,6 +23,8 @@ function App() {
 
   // Refs per comunicazione tra componenti
   const notesEditorRef = useRef(null);
+  const dictionaryEditorRef = useRef(null);
+  const keywordsEditorRef = useRef(null);
   const pdfViewerRef = useRef(null);
 
   // Carica informazioni libro all'avvio
@@ -263,8 +268,21 @@ function App() {
 
       setAnnotations(prev => [...prev, newAnnotation]);
 
-      // 3. Switch alla tab dizionario (quando sara' implementata)
-      // setActiveTab('dictionary');
+      // 3. Inserisci il blocco nel DictionaryEditor
+      if (dictionaryEditorRef.current?.insertDictionaryBlock) {
+        dictionaryEditorRef.current.insertDictionaryBlock({
+          id: newEntry.id,
+          annotationId: newAnnotation.id,
+          pageNumber: annotationData.pageNumber,
+          positionY: annotationData.rects[0]?.y || 0,
+          term: annotationData.text,
+          color: annotationData.color,
+          definition: '',
+        });
+      }
+
+      // 4. Switch alla tab dizionario
+      setActiveTab('dictionary');
 
       console.log('📖 Dictionary entry created:', newEntry.id, newAnnotation.id);
     } catch (error) {
@@ -298,8 +316,21 @@ function App() {
 
       setAnnotations(prev => [...prev, newAnnotation]);
 
-      // 3. Switch alla tab keywords (quando sara' implementata)
-      // setActiveTab('keywords');
+      // 3. Inserisci il blocco nel KeywordsEditor
+      if (keywordsEditorRef.current?.insertKeywordBlock) {
+        keywordsEditorRef.current.insertKeywordBlock({
+          id: newKeyword.id,
+          annotationId: newAnnotation.id,
+          pageNumber: annotationData.pageNumber,
+          positionY: annotationData.rects[0]?.y || 0,
+          term: annotationData.text,
+          color: annotationData.color,
+          comment: '',
+        });
+      }
+
+      // 4. Switch alla tab keywords
+      setActiveTab('keywords');
 
       console.log('🔑 Keyword created:', newKeyword.id, newAnnotation.id);
     } catch (error) {
@@ -339,14 +370,27 @@ function App() {
     }
   };
 
-  // Click su gutter icon -> scrolla alla nota
+  // Click su gutter icon -> scrolla alla voce corrispondente
   const handleGutterClick = (annotation) => {
-    if (annotation.noteId) {
+    if (annotation.type === 'note' && annotation.noteId) {
       setActiveTab('notes');
-      // Usa un piccolo delay per assicurarsi che la tab sia visibile
       setTimeout(() => {
         if (notesEditorRef.current?.scrollToBlock) {
           notesEditorRef.current.scrollToBlock(annotation.noteId);
+        }
+      }, 100);
+    } else if (annotation.type === 'dictionary') {
+      setActiveTab('dictionary');
+      setTimeout(() => {
+        if (dictionaryEditorRef.current?.scrollToBlockByAnnotationId) {
+          dictionaryEditorRef.current.scrollToBlockByAnnotationId(annotation.id);
+        }
+      }, 100);
+    } else if (annotation.type === 'keyword') {
+      setActiveTab('keywords');
+      setTimeout(() => {
+        if (keywordsEditorRef.current?.scrollToBlockByAnnotationId) {
+          keywordsEditorRef.current.scrollToBlockByAnnotationId(annotation.id);
         }
       }, 100);
     }
@@ -370,6 +414,42 @@ function App() {
     }
   };
 
+  // Elimina voce dizionario da TipTap -> elimina anche annotation dal PDF
+  const handleDeleteDictionaryEntry = async (entryId, annotationId) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      await db.deleteDictionaryEntry(entryId);
+      if (annotationId) {
+        await db.deleteAnnotation(annotationId);
+        setAnnotations(prev => prev.filter(a => a.id !== annotationId));
+      }
+
+      console.log('🗑️ Dictionary entry and annotation deleted:', entryId, annotationId);
+    } catch (error) {
+      console.error('Error deleting dictionary entry:', error);
+    }
+  };
+
+  // Elimina keyword da TipTap -> elimina anche annotation dal PDF
+  const handleDeleteKeyword = async (keywordId, annotationId) => {
+    const db = getDatabase();
+    if (!db) return;
+
+    try {
+      await db.deleteKeyword(keywordId);
+      if (annotationId) {
+        await db.deleteAnnotation(annotationId);
+        setAnnotations(prev => prev.filter(a => a.id !== annotationId));
+      }
+
+      console.log('🗑️ Keyword and annotation deleted:', keywordId, annotationId);
+    } catch (error) {
+      console.error('Error deleting keyword:', error);
+    }
+  };
+
   // Naviga al PDF da blocco nota TipTap
   const handleNavigateToPdf = ({ annotationId, pageNumber }) => {
     console.log('📄 Navigate to PDF:', { annotationId, pageNumber });
@@ -389,14 +469,42 @@ function App() {
     switch (activeTab) {
       case 'notes':
         return (
-          <NotesEditor
-            ref={notesEditorRef}
-            bookId={bookInfo?.bookId}
-            pdfDir={pdfDir}
-            dbReady={dbReady}
-            onDeleteNote={handleDeleteNote}
-            onNavigateToPdf={handleNavigateToPdf}
-          />
+          <EditorProvider>
+            <NotesEditor
+              ref={notesEditorRef}
+              bookId={bookInfo?.bookId}
+              pdfDir={pdfDir}
+              dbReady={dbReady}
+              onDeleteNote={handleDeleteNote}
+              onNavigateToPdf={handleNavigateToPdf}
+            />
+          </EditorProvider>
+        );
+      case 'dictionary':
+        return (
+          <EditorProvider>
+            <DictionaryEditor
+              ref={dictionaryEditorRef}
+              bookId={bookInfo?.bookId}
+              pdfDir={pdfDir}
+              dbReady={dbReady}
+              onDeleteEntry={handleDeleteDictionaryEntry}
+              onNavigateToPdf={handleNavigateToPdf}
+            />
+          </EditorProvider>
+        );
+      case 'keywords':
+        return (
+          <EditorProvider>
+            <KeywordsEditor
+              ref={keywordsEditorRef}
+              bookId={bookInfo?.bookId}
+              pdfDir={pdfDir}
+              dbReady={dbReady}
+              onDeleteKeyword={handleDeleteKeyword}
+              onNavigateToPdf={handleNavigateToPdf}
+            />
+          </EditorProvider>
         );
       case 'mindmap':
         return (
@@ -492,9 +600,9 @@ function App() {
         {/* Right Panel - Tabs */}
         <div className="w-2/5 bg-white flex flex-col">
           {/* Tab Headers */}
-          <div className="flex border-b border-gray-200">
+          <div className="flex border-b border-gray-200 overflow-x-auto">
             <button
-              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'notes'
                   ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
                   : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
@@ -504,7 +612,27 @@ function App() {
               📝 Note
             </button>
             <button
-              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'dictionary'
+                  ? 'text-purple-600 border-b-2 border-purple-600 bg-purple-50'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+              onClick={() => setActiveTab('dictionary')}
+            >
+              📖 Dizionario
+            </button>
+            <button
+              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'keywords'
+                  ? 'text-amber-600 border-b-2 border-amber-600 bg-amber-50'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+              onClick={() => setActiveTab('keywords')}
+            >
+              🔑 Parole Chiave
+            </button>
+            <button
+              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'mindmap'
                   ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
                   : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
@@ -514,7 +642,7 @@ function App() {
               🗺️ Mappa
             </button>
             <button
-              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'summary'
                   ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
                   : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'

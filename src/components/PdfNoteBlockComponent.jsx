@@ -94,7 +94,7 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
         </div>
       )}
 
-      {/* Rich Text Comment Editor */}
+      {/* Rich Text Comment Editor - espanso per occupare tutto lo spazio */}
       <div className="pdf-note-block-comment-wrapper">
         <MiniEditor
           content={comment}
@@ -102,6 +102,7 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
           placeholder="Aggiungi un commento..."
           pdfDir={pdfDir}
           bookId={bookId}
+          noteId={noteId}
           onSavingChange={setIsSaving}
         />
         {isSaving && (
