@@ -31,6 +31,10 @@
 
 canvas.pdf-page-canvas {
   display: block;
+  /* Evita sfocatura su schermi HiDPI */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
 }
 
 /* --- Text Layer --- */
