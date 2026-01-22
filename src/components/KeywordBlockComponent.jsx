@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { getDatabase } from '../database/db';
 import MiniEditor from './MiniEditor';
+import { showDeleteKeywordDialog } from '../utils/confirmDialog';
 
 /**
  * Componente React per blocco parola chiave TipTap
@@ -40,10 +41,15 @@ function KeywordBlockComponent({ node, updateAttributes, deleteNode, extension }
     }
   }, [keywordId, updateAttributes]);
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    // Mostra dialog di conferma
+    const confirmed = await showDeleteKeywordDialog();
+    if (!confirmed) return;
+
     // Callback passato dall'extension options
+    // Passa anche il contenuto del commento per eliminare le immagini
     if (extension.options.onDeleteKeyword) {
-      extension.options.onDeleteKeyword(keywordId, annotationId);
+      extension.options.onDeleteKeyword(keywordId, annotationId, comment);
     }
     deleteNode();
   };

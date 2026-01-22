@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { getDatabase } from '../database/db';
 import MiniEditor from './MiniEditor';
+import { showDeleteDictionaryDialog } from '../utils/confirmDialog';
 
 /**
  * Componente React per blocco dizionario TipTap
@@ -40,10 +41,15 @@ function DictionaryBlockComponent({ node, updateAttributes, deleteNode, extensio
     }
   }, [entryId, updateAttributes]);
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    // Mostra dialog di conferma
+    const confirmed = await showDeleteDictionaryDialog();
+    if (!confirmed) return;
+
     // Callback passato dall'extension options
+    // Passa anche il contenuto della definizione per eliminare le immagini
     if (extension.options.onDeleteEntry) {
-      extension.options.onDeleteEntry(entryId, annotationId);
+      extension.options.onDeleteEntry(entryId, annotationId, definition);
     }
     deleteNode();
   };

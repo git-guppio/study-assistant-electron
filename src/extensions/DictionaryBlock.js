@@ -1,6 +1,8 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
 import DictionaryBlockComponent from '../components/DictionaryBlockComponent';
+import { showDeleteDictionaryDialog } from '../utils/confirmDialog';
 
 /**
  * TipTap Extension per blocchi dizionario collegati ad annotazioni PDF
@@ -117,5 +119,60 @@ export const DictionaryBlock = Node.create({
 
   addNodeView() {
     return ReactNodeViewRenderer(DictionaryBlockComponent);
+  },
+
+  addProseMirrorPlugins() {
+    const extension = this;
+
+    return [
+      new Plugin({
+        key: new PluginKey('dictionaryBlockDelete'),
+        props: {
+          handleKeyDown(view, event) {
+            if (event.key === 'Delete' || event.key === 'Backspace') {
+              const { state } = view;
+              const { selection } = state;
+              const { $from, $to } = selection;
+
+              // Verifica se la selezione contiene un blocco dizionario
+              let dictNode = null;
+              let dictPos = null;
+
+              state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+                if (node.type.name === 'dictionaryBlock') {
+                  dictNode = node;
+                  dictPos = pos;
+                  return false;
+                }
+              });
+
+              // Se c'è un blocco dizionario selezionato
+              if (dictNode && dictPos !== null) {
+                event.preventDefault();
+
+                // Mostra dialog di conferma
+                showDeleteDictionaryDialog().then((confirmed) => {
+                  if (confirmed) {
+                    const { entryId, annotationId, definition } = dictNode.attrs;
+
+                    // Callback per eliminare dal database
+                    if (extension.options.onDeleteEntry) {
+                      extension.options.onDeleteEntry(entryId, annotationId, definition);
+                    }
+
+                    // Elimina il nodo dall'editor
+                    const tr = view.state.tr.delete(dictPos, dictPos + dictNode.nodeSize);
+                    view.dispatch(tr);
+                  }
+                });
+
+                return true;
+              }
+            }
+            return false;
+          },
+        },
+      }),
+    ];
   },
 });

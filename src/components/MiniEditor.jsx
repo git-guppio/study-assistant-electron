@@ -1,10 +1,10 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import Underline from '@tiptap/extension-underline';
+import { ImageWithDelete } from '../extensions/ImageWithDelete';
 import { useEditorContext } from '../contexts/EditorContext';
 
 /**
@@ -31,10 +31,20 @@ function MiniEditor({
   // Context per registrare questo editor come attivo
   const { setMiniEditorActive, clearMiniEditorActive, activeMiniEditorId } = useEditorContext();
 
+  // Handler per eliminare immagine da disco
+  const handleDeleteImage = useCallback(async (imageUrl) => {
+    if (window.electronAPI) {
+      await window.electronAPI.deleteImageFromDisk(imageUrl);
+      console.log('🗑️ Image deleted from mini-editor:', imageUrl);
+    }
+  }, []);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Image,
+      ImageWithDelete.configure({
+        onDeleteImage: handleDeleteImage,
+      }),
       Link.configure({
         openOnClick: false,
       }),

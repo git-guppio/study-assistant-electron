@@ -1060,3 +1060,42 @@ canvas.pdf-page-canvas {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   z-index: 1;
 }
+
+/* ===== MISSING IMAGE PLACEHOLDER ===== */
+.ProseMirror img[data-missing="true"],
+.ProseMirror img.image-missing {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border: 2px dashed #9ca3af;
+  border-radius: 8px;
+  min-height: 120px;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.ProseMirror img[data-missing="true"]::before,
+.ProseMirror img.image-missing::before {
+  content: "🖼️ Immagine non trovata";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #6b7280;
+  font-size: 14px;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* Fallback per immagini che non si caricano */
+.ProseMirror img:not([src]),
+.ProseMirror img[src=""],
+.ProseMirror img:-moz-broken,
+.ProseMirror img:-moz-loading {
+  background: #f3f4f6;
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  min-height: 80px;
+  min-width: 150px;
+}

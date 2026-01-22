@@ -3,6 +3,7 @@ import { NodeViewWrapper } from '@tiptap/react';
 import { getEmojiForIcon } from '../constants/annotations';
 import { getDatabase } from '../database/db';
 import MiniEditor from './MiniEditor';
+import { showDeleteNoteDialog } from '../utils/confirmDialog';
 
 /**
  * Componente React per blocco nota TipTap
@@ -46,10 +47,15 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
     }
   }, [noteId, updateAttributes]);
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    // Mostra dialog di conferma
+    const confirmed = await showDeleteNoteDialog();
+    if (!confirmed) return;
+
     // Callback passato dall'extension options
+    // Passa anche il contenuto del commento per eliminare le immagini
     if (extension.options.onDeleteNote) {
-      extension.options.onDeleteNote(noteId, annotationId);
+      extension.options.onDeleteNote(noteId, annotationId, comment);
     }
     deleteNode();
   };
