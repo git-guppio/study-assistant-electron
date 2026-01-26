@@ -70,15 +70,15 @@ export async function collectAllUsedImageUrls(db) {
   const allUrls = new Set();
 
   try {
-    // Note
+    // Note - le immagini sono nel campo 'comment' (HTML del MiniEditor)
     const notes = await db.getNotes();
     for (const note of notes) {
-      if (note.content) {
-        extractLocalImageUrls(note.content).forEach(url => allUrls.add(url));
+      if (note.comment) {
+        extractLocalImageUrls(note.comment).forEach(url => allUrls.add(url));
       }
     }
 
-    // Dictionary entries
+    // Dictionary entries - le immagini sono nel campo 'definition' (HTML del MiniEditor)
     const dictEntries = await db.getDictionaryEntries();
     for (const entry of dictEntries) {
       if (entry.definition) {
@@ -86,7 +86,7 @@ export async function collectAllUsedImageUrls(db) {
       }
     }
 
-    // Keywords
+    // Keywords - le immagini sono nel campo 'comment' (HTML del MiniEditor)
     const keywords = await db.getKeywords();
     for (const kw of keywords) {
       if (kw.comment) {
@@ -94,7 +94,7 @@ export async function collectAllUsedImageUrls(db) {
       }
     }
 
-    // Summary
+    // Summary - il contenuto è HTML
     const summary = await db.getSummary();
     if (summary?.content) {
       extractLocalImageUrls(summary.content).forEach(url => allUrls.add(url));
@@ -118,7 +118,6 @@ export async function deleteImagesFromContent(htmlContent) {
   const imageUrls = extractLocalImageUrls(htmlContent);
 
   if (imageUrls.length > 0) {
-    console.log('🗑️ Deleting', imageUrls.length, 'images from content');
     await window.electronAPI.deleteImagesFromDisk(imageUrls);
   }
 }
