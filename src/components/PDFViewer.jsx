@@ -185,7 +185,9 @@ const PDFViewer = forwardRef(function PDFViewer({
         renderTaskRef.current = page.render({
           canvasContext: context,
           viewport: vp,
-          transform: transform
+          transform: transform,
+          // Disabilita le annotazioni native del PDF (evidenziazioni, commenti, note di altri programmi)
+          annotationMode: pdfjsLib.AnnotationMode.DISABLE
         });
         await renderTaskRef.current.promise;
 
