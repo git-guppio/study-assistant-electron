@@ -125,14 +125,26 @@ app.whenReady().then(() => {
 
       if (!filePath) {
         console.error('❌ Image ID not found in map:', imageId);
-        callback({ error: -6 });
+        // Restituisci placeholder SVG per immagine mancante
+        const placeholderPath = path.join(__dirname, '../public/missing-image.svg');
+        if (fs.existsSync(placeholderPath)) {
+          callback({ path: placeholderPath });
+        } else {
+          callback({ error: -6 });
+        }
         return;
       }
 
       // Verifica esistenza
       if (!fs.existsSync(filePath)) {
         console.error('❌ File not found on disk:', filePath);
-        callback({ error: -6 });
+        // Restituisci placeholder SVG per immagine mancante
+        const placeholderPath = path.join(__dirname, '../public/missing-image.svg');
+        if (fs.existsSync(placeholderPath)) {
+          callback({ path: placeholderPath });
+        } else {
+          callback({ error: -6 });
+        }
         return;
       }
 
@@ -528,6 +540,127 @@ ipcMain.handle('select-image-file', async () => {
   };
 });
 
+// Elimina immagine da disco
+ipcMain.handle('delete-image-from-disk', async (event, imageUrl) => {
+  try {
+    // Estrai l'ID immagine dall'URL (local-image://img_123456_abc.png)
+    let imageId = imageUrl.replace('local-image://', '');
+    imageId = decodeURIComponent(imageId);
+    imageId = imageId.replace(/\/+$/, '');
+
+    // Cerca il percorso nella mappa
+    const filePath = imagePathMap.get(imageId);
+
+    if (!filePath) {
+      console.log('⚠️ Image not found in map (may already be deleted):', imageId);
+      return { success: true, notFound: true };
+    }
+
+    // Elimina il file se esiste
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log('🗑️ Image deleted from disk:', filePath);
+    }
+
+    // Rimuovi dalla mappa
+    imagePathMap.delete(imageId);
+
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error deleting image:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Elimina multiple immagini da disco
+ipcMain.handle('delete-images-from-disk', async (event, imageUrls) => {
+  const results = [];
+
+  for (const imageUrl of imageUrls) {
+    try {
+      let imageId = imageUrl.replace('local-image://', '');
+      imageId = decodeURIComponent(imageId);
+      imageId = imageId.replace(/\/+$/, '');
+
+      const filePath = imagePathMap.get(imageId);
+
+      if (filePath && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log('🗑️ Image deleted:', filePath);
+      }
+
+      imagePathMap.delete(imageId);
+      results.push({ url: imageUrl, success: true });
+    } catch (error) {
+      console.error('❌ Error deleting image:', imageUrl, error);
+      results.push({ url: imageUrl, success: false, error: error.message });
+    }
+  }
+
+  return { success: true, results };
+});
+
+// Verifica se un'immagine esiste su disco
+ipcMain.handle('check-image-exists', async (event, imageUrl) => {
+  try {
+    let imageId = imageUrl.replace('local-image://', '');
+    imageId = decodeURIComponent(imageId);
+    imageId = imageId.replace(/\/+$/, '');
+
+    const filePath = imagePathMap.get(imageId);
+
+    if (!filePath) {
+      return { exists: false };
+    }
+
+    return { exists: fs.existsSync(filePath) };
+  } catch (error) {
+    return { exists: false, error: error.message };
+  }
+});
+
+// Cleanup immagini orfane (immagini su disco non presenti in nessun contenuto)
+ipcMain.handle('cleanup-orphan-images', async (event, { pdfDir, bookId, usedImageUrls }) => {
+  try {
+    const imagesDir = path.join(pdfDir, `${bookId}_images`);
+
+    if (!fs.existsSync(imagesDir)) {
+      return { success: true, deleted: 0 };
+    }
+
+    // Estrai gli ID delle immagini usate
+    const usedImageIds = new Set(
+      usedImageUrls.map(url => {
+        let imageId = url.replace('local-image://', '');
+        imageId = decodeURIComponent(imageId);
+        return imageId.replace(/\/+$/, '');
+      })
+    );
+
+    const files = fs.readdirSync(imagesDir);
+    let deletedCount = 0;
+
+    for (const fileName of files) {
+      if (/\.(png|jpg|jpeg|gif|webp|bmp)$/i.test(fileName)) {
+        if (!usedImageIds.has(fileName)) {
+          const filePath = path.join(imagesDir, fileName);
+          fs.unlinkSync(filePath);
+          imagePathMap.delete(fileName);
+          deletedCount++;
+        }
+      }
+    }
+
+    if (deletedCount > 0) {
+      console.log(`🧹 Cleanup complete: ${deletedCount} orphan images deleted`);
+    }
+    return { success: true, deleted: deletedCount };
+  } catch (error) {
+    console.error('❌ Error during orphan cleanup:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('db-get-keyword', (event, id) => {
   return getDatabase().getKeywordById(id);
 });
@@ -542,6 +675,31 @@ ipcMain.handle('db-update-keyword', (event, { id, updates }) => {
 
 ipcMain.handle('db-delete-keyword', (event, id) => {
   return getDatabase().deleteKeyword(id);
+});
+
+// --- Bookmarks ---
+ipcMain.handle('db-get-bookmarks', () => {
+  return getDatabase().getBookmarks();
+});
+
+ipcMain.handle('db-get-bookmark', (event, id) => {
+  return getDatabase().getBookmarkById(id);
+});
+
+ipcMain.handle('db-get-bookmark-by-page', (event, pageNumber) => {
+  return getDatabase().getBookmarkByPage(pageNumber);
+});
+
+ipcMain.handle('db-save-bookmark', (event, data) => {
+  return getDatabase().saveBookmark(data);
+});
+
+ipcMain.handle('db-update-bookmark', (event, { id, updates }) => {
+  return getDatabase().updateBookmark(id, updates);
+});
+
+ipcMain.handle('db-delete-bookmark', (event, id) => {
+  return getDatabase().deleteBookmark(id);
 });
 
 // Chiudi database quando l'app si chiude

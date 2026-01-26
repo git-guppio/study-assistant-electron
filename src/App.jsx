@@ -3,10 +3,12 @@ import PDFViewer from './components/PDFViewer';
 import NotesEditor from './components/NotesEditor';
 import DictionaryEditor from './components/DictionaryEditor';
 import KeywordsEditor from './components/KeywordsEditor';
+import BookmarksEditor from './components/BookmarksEditor';
 import MindMap from './components/MindMap';
 import SummaryEditor from './components/SummaryEditor';
 import { initDatabase, getDatabase } from './database/db';
 import { EditorProvider } from './contexts/EditorContext';
+import { collectAllUsedImageUrls, extractLocalImageUrls } from './utils/imageUtils';
 
 function App() {
   const [bookInfo, setBookInfo] = useState(null);
@@ -21,10 +23,15 @@ function App() {
   const [customIconColors, setCustomIconColors] = useState({});
   const [customActionColors, setCustomActionColors] = useState({});
 
+  // Bookmarks state
+  const [bookmarks, setBookmarks] = useState([]);
+  const [currentPdfPage, setCurrentPdfPage] = useState(1);
+
   // Refs per comunicazione tra componenti
   const notesEditorRef = useRef(null);
   const dictionaryEditorRef = useRef(null);
   const keywordsEditorRef = useRef(null);
+  const bookmarksEditorRef = useRef(null);
   const pdfViewerRef = useRef(null);
 
   // Carica informazioni libro all'avvio
@@ -47,6 +54,22 @@ function App() {
             console.log('🖼️ Images map loaded:', imagesResult);
 
             setDbReady(true);
+
+            // Cleanup immagini orfane dopo che il database è pronto
+            setTimeout(async () => {
+              try {
+                const db = getDatabase();
+                if (db) {
+                  const usedUrls = await collectAllUsedImageUrls(db);
+                  const cleanupResult = await window.electronAPI.cleanupOrphanImages(dir, info.bookId, usedUrls);
+                  if (cleanupResult.deleted > 0) {
+                    console.log(`🧹 Cleaned up ${cleanupResult.deleted} orphan images`);
+                  }
+                }
+              } catch (error) {
+                console.error('Error during orphan cleanup:', error);
+              }
+            }, 1000);
           }
         } else {
           // Fallback: usa la directory userData per il database
@@ -104,6 +127,11 @@ function App() {
             setCustomActionColors(actionColorsMap);
             console.log('🎨 Custom action colors loaded:', actionColorsMap);
           }
+
+          // Carica segnalibri
+          const savedBookmarks = await db.getBookmarks();
+          setBookmarks(savedBookmarks || []);
+          console.log('🔖 Bookmarks loaded:', savedBookmarks?.length || 0);
         } catch (error) {
           console.error('Error loading data:', error);
         }
@@ -396,12 +424,21 @@ function App() {
     }
   };
 
-  // Elimina nota da TipTap -> elimina anche annotation dal PDF
-  const handleDeleteNote = async (noteId, annotationId) => {
+  // Elimina nota da TipTap -> elimina anche annotation dal PDF e immagini
+  const handleDeleteNote = async (noteId, annotationId, noteContent) => {
     const db = getDatabase();
     if (!db) return;
 
     try {
+      // Elimina le immagini contenute nella nota
+      if (noteContent && window.electronAPI) {
+        const imageUrls = extractLocalImageUrls(noteContent);
+        if (imageUrls.length > 0) {
+          await window.electronAPI.deleteImagesFromDisk(imageUrls);
+          console.log('🗑️ Deleted', imageUrls.length, 'images from note');
+        }
+      }
+
       // Elimina dal DB (CASCADE elimina anche l'annotazione)
       await db.deleteNote(noteId);
 
@@ -414,12 +451,21 @@ function App() {
     }
   };
 
-  // Elimina voce dizionario da TipTap -> elimina anche annotation dal PDF
-  const handleDeleteDictionaryEntry = async (entryId, annotationId) => {
+  // Elimina voce dizionario da TipTap -> elimina anche annotation dal PDF e immagini
+  const handleDeleteDictionaryEntry = async (entryId, annotationId, definitionContent) => {
     const db = getDatabase();
     if (!db) return;
 
     try {
+      // Elimina le immagini contenute nella definizione
+      if (definitionContent && window.electronAPI) {
+        const imageUrls = extractLocalImageUrls(definitionContent);
+        if (imageUrls.length > 0) {
+          await window.electronAPI.deleteImagesFromDisk(imageUrls);
+          console.log('🗑️ Deleted', imageUrls.length, 'images from dictionary entry');
+        }
+      }
+
       await db.deleteDictionaryEntry(entryId);
       if (annotationId) {
         await db.deleteAnnotation(annotationId);
@@ -432,12 +478,21 @@ function App() {
     }
   };
 
-  // Elimina keyword da TipTap -> elimina anche annotation dal PDF
-  const handleDeleteKeyword = async (keywordId, annotationId) => {
+  // Elimina keyword da TipTap -> elimina anche annotation dal PDF e immagini
+  const handleDeleteKeyword = async (keywordId, annotationId, commentContent) => {
     const db = getDatabase();
     if (!db) return;
 
     try {
+      // Elimina le immagini contenute nel commento
+      if (commentContent && window.electronAPI) {
+        const imageUrls = extractLocalImageUrls(commentContent);
+        if (imageUrls.length > 0) {
+          await window.electronAPI.deleteImagesFromDisk(imageUrls);
+          console.log('🗑️ Deleted', imageUrls.length, 'images from keyword');
+        }
+      }
+
       await db.deleteKeyword(keywordId);
       if (annotationId) {
         await db.deleteAnnotation(annotationId);
@@ -449,6 +504,23 @@ function App() {
       console.error('Error deleting keyword:', error);
     }
   };
+
+  // Handler per aggiungere/modificare segnalibro (chiamato dal PDFViewer)
+  const handleAddBookmark = (pageNumber, existingBookmark) => {
+    // Apri il dialog tramite BookmarksEditor
+    if (bookmarksEditorRef.current?.openDialog) {
+      bookmarksEditorRef.current.openDialog(pageNumber, existingBookmark);
+      setActiveTab('bookmarks');
+    }
+  };
+
+  // Callback chiamato quando la pagina del PDF cambia
+  const handlePdfPageChange = (pageNumber) => {
+    setCurrentPdfPage(pageNumber);
+  };
+
+  // Calcola il segnalibro per la pagina corrente
+  const currentPageBookmark = bookmarks.find(b => b.pageNumber === currentPdfPage) || null;
 
   // Naviga al PDF da blocco nota TipTap
   const handleNavigateToPdf = ({ annotationId, pageNumber }) => {
@@ -467,6 +539,17 @@ function App() {
 
   const renderTabContent = () => {
     switch (activeTab) {
+      case 'bookmarks':
+        return (
+          <BookmarksEditor
+            ref={bookmarksEditorRef}
+            bookId={bookInfo?.bookId}
+            dbReady={dbReady}
+            onNavigateToPdf={handleNavigateToPdf}
+            currentPage={currentPdfPage}
+            onBookmarksChange={setBookmarks}
+          />
+        );
       case 'notes':
         return (
           <EditorProvider>
@@ -585,6 +668,9 @@ function App() {
                 documentDefaults={documentDefaults}
                 customIconColors={customIconColors}
                 customActionColors={customActionColors}
+                currentPageBookmark={currentPageBookmark}
+                onAddBookmark={handleAddBookmark}
+                onPageChange={handlePdfPageChange}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-500">
@@ -601,6 +687,16 @@ function App() {
         <div className="w-2/5 bg-white flex flex-col">
           {/* Tab Headers */}
           <div className="flex border-b border-gray-200 overflow-x-auto">
+            <button
+              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'bookmarks'
+                  ? 'text-red-600 border-b-2 border-red-600 bg-red-50'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+              onClick={() => setActiveTab('bookmarks')}
+            >
+              🔖 Segnalibri
+            </button>
             <button
               className={`flex-1 px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'notes'

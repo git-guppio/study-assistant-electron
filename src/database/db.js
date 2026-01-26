@@ -285,6 +285,38 @@ class DatabaseManager {
     if (!this.initialized) return false;
     return await window.electronAPI.dbDeleteKeyword(id);
   }
+
+  // --- BOOKMARKS ---
+
+  async getBookmarks() {
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetBookmarks();
+  }
+
+  async getBookmarkById(id) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetBookmark(id);
+  }
+
+  async getBookmarkByPage(pageNumber) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetBookmarkByPage(pageNumber);
+  }
+
+  async saveBookmark(data) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbSaveBookmark(data);
+  }
+
+  async updateBookmark(id, updates) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpdateBookmark(id, updates);
+  }
+
+  async deleteBookmark(id) {
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteBookmark(id);
+  }
 }
 
 // Singleton instance

@@ -22,7 +22,10 @@ const PDFViewer = forwardRef(function PDFViewer({
   onGutterClick,
   documentDefaults = {},
   customIconColors = {},
-  customActionColors = {}
+  customActionColors = {},
+  currentPageBookmark = null,
+  onAddBookmark,
+  onPageChange
 }, ref) {
   const [pdfDoc, setPdfDoc] = useState(null);
   const [numPages, setNumPages] = useState(0);
@@ -47,13 +50,16 @@ const PDFViewer = forwardRef(function PDFViewer({
   const contentAreaRef = useRef(null);
   const renderTaskRef = useRef(null);
   const flashTimeoutRef = useRef(null);
-  const scrollPositionRef = useRef('top'); // 'top' | 'bottom' - posizione iniziale dopo cambio pagina
+  // Traccia la posizione di scroll desiderata e la pagina di destinazione
+  // forPage permette di applicare lo scroll solo quando la pagina corretta è renderizzata
+  const scrollPositionRef = useRef({ position: 'top', forPage: null });
 
   // Esponi metodi via ref per navigazione da Note -> PDF
   useImperativeHandle(ref, () => ({
     // Vai a una pagina specifica
     goToPage: (pageNumber) => {
       if (pageNumber >= 1 && pageNumber <= numPages) {
+        scrollPositionRef.current = { position: 'top', forPage: pageNumber };
         setCurrentPage(pageNumber);
       }
     },
@@ -139,6 +145,13 @@ const PDFViewer = forwardRef(function PDFViewer({
     loadDoc();
   }, [filePath]);
 
+  // Notifica il cambio pagina al componente padre
+  useEffect(() => {
+    if (onPageChange) {
+      onPageChange(currentPage);
+    }
+  }, [currentPage, onPageChange]);
+
   // Rendering Pagina e Text Layer (Sincronizzato)
   useEffect(() => {
     if (!pdfDoc) return;
@@ -165,7 +178,6 @@ const PDFViewer = forwardRef(function PDFViewer({
         if (cancelled) return;
 
         const vp = page.getViewport({ scale });
-        setViewport(vp);
 
         const canvas = canvasRef.current;
         const textLayerDiv = textLayerRef.current;
@@ -178,6 +190,10 @@ const PDFViewer = forwardRef(function PDFViewer({
         canvas.height = Math.floor(vp.height * dpr);
         canvas.style.width = `${vp.width}px`;
         canvas.style.height = `${vp.height}px`;
+
+        // Imposta viewport DOPO le dimensioni del canvas, così lo scroll effect
+        // può calcolare correttamente scrollHeight
+        setViewport(vp);
 
         const context = canvas.getContext('2d');
         const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
@@ -238,18 +254,27 @@ const PDFViewer = forwardRef(function PDFViewer({
     if (!contentAreaRef.current || !viewport) return;
 
     const container = contentAreaRef.current;
+    const { position, forPage } = scrollPositionRef.current;
 
-    // Applica la posizione di scroll richiesta
-    if (scrollPositionRef.current === 'bottom') {
-      // Scrolla alla fine della pagina
-      container.scrollTop = container.scrollHeight - container.clientHeight;
-    } else {
-      // Scrolla all'inizio della pagina
+    // Applica lo scroll solo se è per la pagina corrente (evita di applicare prima che il render sia completo)
+    if (forPage === currentPage) {
+      // Usa setTimeout per assicurarsi che il DOM sia completamente aggiornato
+      setTimeout(() => {
+        const scrollTarget = container.scrollHeight - container.clientHeight;
+        if (position === 'bottom') {
+          // Scrolla alla fine della pagina
+          container.scrollTop = scrollTarget;
+        } else {
+          // Scrolla all'inizio della pagina
+          container.scrollTop = 0;
+        }
+      }, 50);
+      // Reset dopo aver applicato
+      scrollPositionRef.current = { position: 'top', forPage: null };
+    } else if (forPage === null) {
+      // Comportamento di default per cambi pagina senza scroll position specificato
       container.scrollTop = 0;
     }
-
-    // Reset a 'top' per il comportamento di default
-    scrollPositionRef.current = 'top';
   }, [viewport, currentPage]);
 
   // Registra evento wheel con passive: false per poter usare preventDefault
@@ -267,12 +292,12 @@ const PDFViewer = forwardRef(function PDFViewer({
       if (!canScroll) {
         e.preventDefault();
         if (e.deltaY > 0 && currentPage < numPages) {
-          // Scroll verso il basso -> pagina successiva
-          scrollPositionRef.current = 'top';
+          // Scroll verso il basso -> pagina successiva (mostra dall'alto)
+          scrollPositionRef.current = { position: 'top', forPage: currentPage + 1 };
           setCurrentPage(p => p + 1);
         } else if (e.deltaY < 0 && currentPage > 1) {
-          // Scroll verso l'alto -> pagina precedente
-          scrollPositionRef.current = 'bottom';
+          // Scroll verso l'alto -> pagina precedente (mostra dal basso)
+          scrollPositionRef.current = { position: 'bottom', forPage: currentPage - 1 };
           setCurrentPage(p => p - 1);
         }
         return;
@@ -280,14 +305,14 @@ const PDFViewer = forwardRef(function PDFViewer({
 
       // Se la pagina richiede scroll, cambia pagina solo ai bordi
       if (e.deltaY > 0 && isAtBottom && currentPage < numPages) {
-        // Al bordo inferiore, scroll verso il basso -> pagina successiva
+        // Al bordo inferiore, scroll verso il basso -> pagina successiva (mostra dall'alto)
         e.preventDefault();
-        scrollPositionRef.current = 'top';
+        scrollPositionRef.current = { position: 'top', forPage: currentPage + 1 };
         setCurrentPage(p => p + 1);
       } else if (e.deltaY < 0 && isAtTop && currentPage > 1) {
-        // Al bordo superiore, scroll verso l'alto -> pagina precedente
+        // Al bordo superiore, scroll verso l'alto -> pagina precedente (mostra dal basso)
         e.preventDefault();
-        scrollPositionRef.current = 'bottom';
+        scrollPositionRef.current = { position: 'bottom', forPage: currentPage - 1 };
         setCurrentPage(p => p - 1);
       }
       // Altrimenti, lascia lo scroll normale
@@ -533,7 +558,11 @@ const PDFViewer = forwardRef(function PDFViewer({
       <div className="bg-white border-b border-gray-300 p-2 flex items-center justify-between shadow-sm z-10">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            onClick={() => {
+              const newPage = Math.max(1, currentPage - 1);
+              scrollPositionRef.current = { position: 'top', forPage: newPage };
+              setCurrentPage(newPage);
+            }}
             disabled={currentPage === 1}
             className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-30"
           >
@@ -543,11 +572,28 @@ const PDFViewer = forwardRef(function PDFViewer({
             Pagina {currentPage} / {numPages}
           </span>
           <button
-            onClick={() => setCurrentPage(p => Math.min(numPages, p + 1))}
+            onClick={() => {
+              const newPage = Math.min(numPages, currentPage + 1);
+              scrollPositionRef.current = { position: 'top', forPage: newPage };
+              setCurrentPage(newPage);
+            }}
             disabled={currentPage === numPages}
             className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-30"
           >
             →
+          </button>
+
+          {/* Pulsante Segnalibro */}
+          <button
+            onClick={() => onAddBookmark && onAddBookmark(currentPage, currentPageBookmark)}
+            className={`ml-4 px-3 py-1 rounded transition-colors ${
+              currentPageBookmark
+                ? 'bg-amber-100 hover:bg-amber-200 text-amber-700'
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+            }`}
+            title={currentPageBookmark ? 'Modifica segnalibro' : 'Aggiungi segnalibro'}
+          >
+            🔖
           </button>
         </div>
         <div className="flex items-center gap-2">
@@ -603,6 +649,21 @@ const PDFViewer = forwardRef(function PDFViewer({
               </div>
             ))}
           </div>
+
+          {/* Bookmark Ribbon (segnalibro) */}
+          {currentPageBookmark && (
+            <div
+              className="pdf-bookmark-ribbon"
+              style={{ backgroundColor: currentPageBookmark.color }}
+              title={currentPageBookmark.title}
+              onClick={() => onAddBookmark && onAddBookmark(currentPage, currentPageBookmark)}
+            >
+              <div
+                className="pdf-bookmark-ribbon-fold"
+                style={{ borderTopColor: currentPageBookmark.color }}
+              />
+            </div>
+          )}
 
           {/* Canvas (PDF rendering) */}
           <canvas ref={canvasRef} className="pdf-page-canvas" />

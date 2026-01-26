@@ -221,6 +221,18 @@ function createTables() {
     )
   `);
 
+  // Tabella Bookmarks (segnalibri - max uno per pagina)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pageNumber INTEGER NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      color TEXT DEFAULT '#ef4444',
+      createdAt TEXT DEFAULT (datetime('now')),
+      updatedAt TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   // Indici per performance
   db.run(`CREATE INDEX IF NOT EXISTS idx_annotations_page ON annotations(pageNumber)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_annotations_type ON annotations(type)`);
@@ -228,6 +240,7 @@ function createTables() {
   db.run(`CREATE INDEX IF NOT EXISTS idx_flashcards_annotation ON flashcards(annotationId)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_dictionary_annotation ON dictionary_entries(annotationId)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_keywords_annotation ON keywords(annotationId)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_bookmarks_page ON bookmarks(pageNumber)`);
 
   // Migrazioni
   migrateOutlineToNote();
@@ -779,6 +792,61 @@ function deleteKeyword(id) {
   return result.changes > 0;
 }
 
+// ==================== BOOKMARKS ====================
+
+function getBookmarks() {
+  return queryAll('SELECT * FROM bookmarks ORDER BY pageNumber ASC');
+}
+
+function getBookmarkById(id) {
+  return queryOne('SELECT * FROM bookmarks WHERE id = ?', [id]);
+}
+
+function getBookmarkByPage(pageNumber) {
+  return queryOne('SELECT * FROM bookmarks WHERE pageNumber = ?', [pageNumber]);
+}
+
+function saveBookmark(data) {
+  // Verifica se esiste già un bookmark per questa pagina
+  const existing = getBookmarkByPage(data.pageNumber);
+  if (existing) {
+    // Aggiorna il bookmark esistente
+    return updateBookmark(existing.id, { title: data.title, color: data.color });
+  }
+
+  const result = runQuery(
+    `INSERT INTO bookmarks (pageNumber, title, color) VALUES (?, ?, ?)`,
+    [data.pageNumber, data.title, data.color || '#ef4444']
+  );
+  return getBookmarkById(result.lastInsertRowid);
+}
+
+function updateBookmark(id, updates) {
+  const fields = [];
+  const values = [];
+
+  if (updates.title !== undefined) {
+    fields.push('title = ?');
+    values.push(updates.title);
+  }
+  if (updates.color !== undefined) {
+    fields.push('color = ?');
+    values.push(updates.color);
+  }
+
+  if (fields.length === 0) return getBookmarkById(id);
+
+  fields.push("updatedAt = datetime('now')");
+  values.push(id);
+  runQuery(`UPDATE bookmarks SET ${fields.join(', ')} WHERE id = ?`, values);
+  return getBookmarkById(id);
+}
+
+function deleteBookmark(id) {
+  const result = runQuery('DELETE FROM bookmarks WHERE id = ?', [id]);
+  return result.changes > 0;
+}
+
 // ==================== EXPORT ====================
 
 module.exports = {
@@ -833,5 +901,12 @@ module.exports = {
   getKeywordById,
   saveKeyword,
   updateKeyword,
-  deleteKeyword
+  deleteKeyword,
+  // Bookmarks
+  getBookmarks,
+  getBookmarkById,
+  getBookmarkByPage,
+  saveBookmark,
+  updateBookmark,
+  deleteBookmark
 };

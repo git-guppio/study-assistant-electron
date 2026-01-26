@@ -86,11 +86,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbUpdateKeyword: (id, updates) => ipcRenderer.invoke('db-update-keyword', { id, updates }),
   dbDeleteKeyword: (id) => ipcRenderer.invoke('db-delete-keyword', id),
 
+  // Bookmarks
+  dbGetBookmarks: () => ipcRenderer.invoke('db-get-bookmarks'),
+  dbGetBookmark: (id) => ipcRenderer.invoke('db-get-bookmark', id),
+  dbGetBookmarkByPage: (pageNumber) => ipcRenderer.invoke('db-get-bookmark-by-page', pageNumber),
+  dbSaveBookmark: (data) => ipcRenderer.invoke('db-save-bookmark', data),
+  dbUpdateBookmark: (id, updates) => ipcRenderer.invoke('db-update-bookmark', { id, updates }),
+  dbDeleteBookmark: (id) => ipcRenderer.invoke('db-delete-bookmark', id),
+
   // ==================== IMAGE API ====================
   loadImagesMap: (pdfDir, bookId) =>
     ipcRenderer.invoke('load-images-map', { pdfDir, bookId }),
   saveImageToDisk: (imageData, pdfDir, bookId) =>
     ipcRenderer.invoke('save-image-to-disk', { imageData, pdfDir, bookId }),
   readImageFromDisk: (filePath) => ipcRenderer.invoke('read-image-from-disk', filePath),
-  selectImageFile: () => ipcRenderer.invoke('select-image-file')
+  selectImageFile: () => ipcRenderer.invoke('select-image-file'),
+  deleteImageFromDisk: (imageUrl) => ipcRenderer.invoke('delete-image-from-disk', imageUrl),
+  deleteImagesFromDisk: (imageUrls) => ipcRenderer.invoke('delete-images-from-disk', imageUrls),
+  checkImageExists: (imageUrl) => ipcRenderer.invoke('check-image-exists', imageUrl),
+  cleanupOrphanImages: (pdfDir, bookId, usedImageUrls) =>
+    ipcRenderer.invoke('cleanup-orphan-images', { pdfDir, bookId, usedImageUrls })
 });
