@@ -1,21 +1,22 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import { getEmojiForIcon } from '../constants/annotations';
 import { getDatabase } from '../database/db';
 import MiniEditor from './MiniEditor';
 import { showDeleteNoteDialog } from '../utils/confirmDialog';
+import { useEditorContext } from '../contexts/EditorContext';
 
 /**
  * Componente React per blocco nota TipTap
  *
  * Layout:
- * ┌─────────────────────────────────────┐
- * │ 💡 Arancio  Pag. 5  │ [PDF] │ [✕]  │  ← Header
- * ├─────────────────────────────────────┤
- * │ > "Testo selezionato dal PDF..."    │  ← Blockquote
- * ├─────────────────────────────────────┤
- * │ [Rich Text Editor con toolbar]      │  ← MiniEditor
- * └─────────────────────────────────────┘
+ * ┌─────────────────────────────────────────────┐
+ * │ 💡 Pag. 5  │ [▼] │ [PDF] │ [✕]              │  ← Header
+ * ├─────────────────────────────────────────────┤
+ * │ > "Testo selezionato dal PDF..."            │  ← Blockquote
+ * ├─────────────────────────────────────────────┤
+ * │ [Rich Text Editor - comprimibile]           │  ← MiniEditor
+ * └─────────────────────────────────────────────┘
  */
 function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }) {
   const { noteId, annotationId, pageNumber, selectionText, color, gutterIconId, comment } = node.attrs;
@@ -23,11 +24,38 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
   // Recupera pdfDir e bookId dalle extension options
   const { pdfDir, bookId } = extension.options;
 
-  // Debug: log extension options
-  console.log('🔧 PdfNoteBlockComponent extension options:', { pdfDir, bookId, noteId });
+  // Context per sapere quale nota è attiva
+  const { activeMiniEditorId } = useEditorContext();
+
+  // Stato expanded/collapsed (default: compresso)
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const lastSavedRef = useRef(comment);
+
+  // La nota è attiva se il suo MiniEditor ha il focus
+  const isActive = activeMiniEditorId === noteId;
+
+  // Quando la nota diventa attiva, espandila automaticamente
+  useEffect(() => {
+    if (isActive && !isExpanded) {
+      setIsExpanded(true);
+    }
+  }, [isActive]);
+
+  // Ascolta eventi globali per espandi/comprimi tutte
+  useEffect(() => {
+    const handleExpandAll = () => setIsExpanded(true);
+    const handleCollapseAll = () => setIsExpanded(false);
+
+    window.addEventListener('expandAllNotes', handleExpandAll);
+    window.addEventListener('collapseAllNotes', handleCollapseAll);
+
+    return () => {
+      window.removeEventListener('expandAllNotes', handleExpandAll);
+      window.removeEventListener('collapseAllNotes', handleCollapseAll);
+    };
+  }, []);
 
   // Handler per salvare il commento
   const handleCommentChange = useCallback(async (htmlContent) => {
@@ -67,8 +95,21 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
     }
   };
 
+  // Toggle expand/collapse
+  const toggleExpanded = (e) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
+  };
+
+  // Classi CSS per stato attivo e espanso
+  const blockClasses = [
+    'pdf-note-block',
+    isActive ? 'pdf-note-block-active' : '',
+    isExpanded ? 'pdf-note-block-expanded' : 'pdf-note-block-collapsed'
+  ].filter(Boolean).join(' ');
+
   return (
-    <NodeViewWrapper className="pdf-note-block" data-note-id={noteId}>
+    <NodeViewWrapper className={blockClasses} data-note-id={noteId}>
       {/* Header */}
       <div className="pdf-note-block-header" style={{ borderLeftColor: color }}>
         <div className="pdf-note-block-header-left">
@@ -76,6 +117,13 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
           <span className="pdf-note-block-page">Pag. {pageNumber}</span>
         </div>
         <div className="pdf-note-block-header-right">
+          <button
+            className="pdf-note-block-btn pdf-note-block-btn-expand"
+            onClick={toggleExpanded}
+            title={isExpanded ? 'Comprimi nota' : 'Espandi nota'}
+          >
+            {isExpanded ? '▲' : '▼'}
+          </button>
           <button
             className="pdf-note-block-btn pdf-note-block-btn-navigate"
             onClick={handleNavigateToPdf}
@@ -100,7 +148,7 @@ function PdfNoteBlockComponent({ node, updateAttributes, deleteNode, extension }
         </div>
       )}
 
-      {/* Rich Text Comment Editor - espanso per occupare tutto lo spazio */}
+      {/* Rich Text Comment Editor - comprimibile */}
       <div className="pdf-note-block-comment-wrapper">
         <MiniEditor
           content={comment}

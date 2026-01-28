@@ -1,11 +1,11 @@
 import { useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import Underline from '@tiptap/extension-underline';
 import { PdfNoteBlock } from '../extensions/PdfNoteBlock';
+import { ImageWithDelete } from '../extensions/ImageWithDelete';
 import { getDatabase } from '../database/db';
 import { useEditorContext } from '../contexts/EditorContext';
 
@@ -14,11 +14,21 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
   // Context per gestire l'editor attivo (principale o MiniEditor)
   const { registerMainEditor, activeEditor, activeMiniEditorId } = useEditorContext();
 
+  // Handler per eliminare immagine da disco
+  const handleDeleteImage = useCallback(async (imageUrl) => {
+    if (window.electronAPI) {
+      await window.electronAPI.deleteImageFromDisk(imageUrl);
+      console.log('🗑️ Image deleted from editor:', imageUrl);
+    }
+  }, []);
+
   // Editor principale
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Image,
+      ImageWithDelete.configure({
+        onDeleteImage: handleDeleteImage,
+      }),
       Link.configure({
         openOnClick: false,
       }),
@@ -96,6 +106,29 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
         .run();
 
       console.log('📝 Note block inserted at position', insertPosition, ':', noteData.id);
+
+      // Dopo l'inserimento, fai scroll, evidenzia e dai focus
+      setTimeout(() => {
+        const noteElement = document.querySelector(`[data-note-id="${noteData.id}"]`);
+        if (noteElement) {
+          // Scroll alla nota
+          noteElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+          // Evidenzia con animazione flash
+          noteElement.classList.add('note-flash');
+          setTimeout(() => {
+            noteElement.classList.remove('note-flash');
+          }, 2000);
+
+          // Focus sul MiniEditor della nota
+          const miniEditorContent = noteElement.querySelector('.mini-editor-content');
+          if (miniEditorContent) {
+            setTimeout(() => {
+              miniEditorContent.focus();
+            }, 300); // Piccolo delay per permettere allo scroll di completarsi
+          }
+        }
+      }, 100); // Attendi che il DOM sia aggiornato
     },
 
     removePdfNoteBlock: (noteId) => {
@@ -494,6 +527,24 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
             title="Inserisci immagine da file"
           >
             🖼 File
+          </button>
+
+          <div className="w-px bg-gray-300 mx-1 h-6"></div>
+
+          {/* Expand/Collapse All */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('expandAllNotes'))}
+            className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
+            title="Espandi tutte le note"
+          >
+            ⊞ Espandi
+          </button>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('collapseAllNotes'))}
+            className="px-2 py-1 text-sm rounded hover:bg-gray-200 bg-white"
+            title="Comprimi tutte le note"
+          >
+            ⊟ Comprimi
           </button>
         </div>
       </div>
