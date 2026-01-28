@@ -1,6 +1,7 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { getDatabase } from '../database/db';
 import BookmarkDialog from './BookmarkDialog';
+import { showDeleteBookmarkDialog } from '../utils/confirmDialog';
 
 /**
  * Componente per visualizzare e gestire i segnalibri
@@ -90,7 +91,8 @@ const BookmarksEditor = forwardRef(function BookmarksEditor({
 
   // Gestisci eliminazione
   const handleDelete = async (bookmark) => {
-    if (!confirm(`Eliminare il segnalibro "${bookmark.title}"?`)) return;
+    const confirmed = await showDeleteBookmarkDialog(bookmark.title);
+    if (!confirmed) return;
 
     try {
       const db = getDatabase();
