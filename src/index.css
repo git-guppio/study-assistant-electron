@@ -2036,3 +2036,107 @@ canvas.pdf-page-canvas {
 .mindmap-context-line-style-btn svg {
   flex-shrink: 0;
 }
+
+/* Icona menu contestuale */
+.mindmap-context-menu-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Shortcut nel menu contestuale */
+.mindmap-context-menu-shortcut {
+  margin-left: auto;
+  font-size: 11px;
+  color: #9ca3af;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ===== MINDMAP IMAGE NODE ===== */
+.mindmap-image-node {
+  position: relative;
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.mindmap-image-node:hover {
+  border-color: #94a3b8;
+}
+
+.mindmap-image-node.selected {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3), 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.mindmap-image-content {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Handle per connessioni */
+.mindmap-image-handle {
+  width: 10px !important;
+  height: 10px !important;
+  background: #3b82f6 !important;
+  border: 2px solid white !important;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.mindmap-image-node:hover .mindmap-image-handle,
+.mindmap-image-node.selected .mindmap-image-handle {
+  opacity: 1;
+}
+
+/* Maniglie di ridimensionamento */
+.mindmap-image-resize-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: white;
+  border: 2px solid #3b82f6;
+  border-radius: 2px;
+  z-index: 10;
+}
+
+.mindmap-image-resize-handle:hover {
+  background: #3b82f6;
+}
+
+.mindmap-image-resize-handle.nw {
+  top: -6px;
+  left: -6px;
+  cursor: nw-resize;
+}
+
+.mindmap-image-resize-handle.ne {
+  top: -6px;
+  right: -6px;
+  cursor: ne-resize;
+}
+
+.mindmap-image-resize-handle.sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: sw-resize;
+}
+
+.mindmap-image-resize-handle.se {
+  bottom: -6px;
+  right: -6px;
+  cursor: se-resize;
+}

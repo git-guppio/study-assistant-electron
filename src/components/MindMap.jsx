@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -7,12 +7,15 @@ import ReactFlow, {
   useEdgesState,
   addEdge,
   MarkerType,
+  ReactFlowProvider,
+  useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { getDatabase } from '../database/db';
 import MindMapSelector from './MindMapSelector';
 import MindMapDialog from './MindMapDialog';
 import MindMapContextMenu from './MindMapContextMenu';
+import MindMapImageNode from './MindMapImageNode';
 import { showConfirmDialog } from '../utils/confirmDialog';
 
 // Nodo iniziale per nuove mappe
@@ -56,10 +59,13 @@ function lightenColor(hex, percent) {
   return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 }
 
-function MindMap({ bookId }) {
+// Componente interno che usa useReactFlow
+function MindMapInner({ bookId }) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [nodeLabel, setNodeLabel] = useState('');
+  const { screenToFlowPosition } = useReactFlow();
+  const flowRef = useRef(null);
 
   // Multi-mindmap state
   const [mindmaps, setMindmaps] = useState([]);
@@ -68,7 +74,7 @@ function MindMap({ bookId }) {
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState('new'); // 'new' | 'rename' | 'color'
+  const [dialogMode, setDialogMode] = useState('new');
   const [editingMapId, setEditingMapId] = useState(null);
 
   // Auto-save con debounce
@@ -79,10 +85,40 @@ function MindMap({ bookId }) {
   const [contextMenu, setContextMenu] = useState({
     isOpen: false,
     position: { x: 0, y: 0 },
-    type: null, // 'node' | 'edge'
+    flowPosition: { x: 0, y: 0 },
+    type: null,
     targetId: null,
     currentStyle: null
   });
+
+  // Handler per resize immagini - passato ai nodi immagine
+  const handleImageResize = useCallback((nodeId, dimensions) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === nodeId && node.type === 'imageNode') {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              width: dimensions.width,
+              height: dimensions.height
+            }
+          };
+        }
+        return node;
+      })
+    );
+  }, [setNodes]);
+
+  // Tipi di nodo custom con handler resize
+  const nodeTypes = useMemo(() => ({
+    imageNode: (props) => (
+      <MindMapImageNode
+        {...props}
+        data={{ ...props.data, onResize: handleImageResize }}
+      />
+    )
+  }), [handleImageResize]);
 
   // Carica lista mappe all'avvio
   useEffect(() => {
@@ -95,7 +131,6 @@ function MindMap({ bookId }) {
 
     hasChangesRef.current = true;
 
-    // Debounce: salva dopo 1 secondo di inattività
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
@@ -114,6 +149,65 @@ function MindMap({ bookId }) {
     };
   }, [nodes, edges, selectedMapId]);
 
+  // Handler per Ctrl+V (incolla immagine)
+  useEffect(() => {
+    const handlePaste = async (e) => {
+      // Solo se il focus è sulla mappa
+      if (!flowRef.current?.contains(document.activeElement) &&
+          document.activeElement !== flowRef.current) {
+        return;
+      }
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          if (blob) {
+            const base64 = await blobToBase64(blob);
+            // Aggiungi immagine al centro della viewport
+            const centerPosition = screenToFlowPosition({
+              x: window.innerWidth / 2,
+              y: window.innerHeight / 2
+            });
+            addImageNode(base64, centerPosition);
+          }
+          break;
+        }
+      }
+    };
+
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [screenToFlowPosition]);
+
+  // Converti blob in base64
+  const blobToBase64 = (blob) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  // Aggiungi nodo immagine
+  const addImageNode = useCallback((imageData, position) => {
+    const newNode = {
+      id: `img_${Date.now()}`,
+      type: 'imageNode',
+      position: position,
+      data: {
+        image: imageData,
+        width: 150,
+        height: 150
+      }
+    };
+    setNodes((nds) => [...nds, newNode]);
+  }, [setNodes]);
+
   const loadMindmaps = async () => {
     setLoading(true);
     const db = getDatabase();
@@ -122,12 +216,10 @@ function MindMap({ bookId }) {
       setMindmaps(maps);
 
       if (maps.length > 0) {
-        // Seleziona la mappa più recente
-        const mostRecent = maps[0]; // già ordinato per updatedAt DESC
+        const mostRecent = maps[0];
         setSelectedMapId(mostRecent.id);
         loadMapData(mostRecent);
       } else {
-        // Crea prima mappa automaticamente
         await createFirstMap();
       }
     }
@@ -164,9 +256,7 @@ function MindMap({ bookId }) {
     }
   };
 
-  // Seleziona una mappa
   const handleSelectMap = async (id) => {
-    // Salva mappa corrente prima di cambiare
     if (selectedMapId && hasChangesRef.current) {
       await saveCurrentMap();
       hasChangesRef.current = false;
@@ -179,7 +269,6 @@ function MindMap({ bookId }) {
     }
   };
 
-  // Crea nuova mappa
   const handleNewMap = () => {
     setDialogMode('new');
     setEditingMapId(null);
@@ -213,8 +302,6 @@ function MindMap({ bookId }) {
       const db = getDatabase();
       if (db) {
         await db.deleteMindmap(id);
-
-        // Ricarica lista e seleziona altra mappa
         const updatedMaps = await db.getAllMindmaps();
         setMindmaps(updatedMaps);
 
@@ -227,13 +314,11 @@ function MindMap({ bookId }) {
     }
   };
 
-  // Gestisci salvataggio dialog
   const handleDialogSave = async ({ name, color }) => {
     const db = getDatabase();
     if (!db) return;
 
     if (dialogMode === 'new') {
-      // Genera nome sequenziale
       const existingNames = mindmaps.map(m => m.name);
       let newName = name;
       if (!name) {
@@ -260,7 +345,6 @@ function MindMap({ bookId }) {
       const updatedMaps = await db.getAllMindmaps();
       setMindmaps(updatedMaps);
 
-      // Aggiorna colore nodo principale se è la mappa corrente
       if (editingMapId === selectedMapId) {
         setNodes(nds => nds.map(node => {
           if (node.type === 'input') {
@@ -302,28 +386,37 @@ function MindMap({ bookId }) {
     setContextMenu({
       isOpen: true,
       position: { x: event.clientX, y: event.clientY },
+      flowPosition: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
       type: 'node',
       targetId: node.id,
       currentStyle: node.style || {}
     });
-  }, []);
+  }, [screenToFlowPosition]);
 
   const onEdgeContextMenu = useCallback((event, edge) => {
     event.preventDefault();
     setContextMenu({
       isOpen: true,
       position: { x: event.clientX, y: event.clientY },
+      flowPosition: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
       type: 'edge',
       targetId: edge.id,
       currentStyle: edge.style || {}
     });
-  }, []);
+  }, [screenToFlowPosition]);
 
   const onPaneContextMenu = useCallback((event) => {
-    // Chiudi il menu se si clicca sullo sfondo
     event.preventDefault();
-    setContextMenu(prev => ({ ...prev, isOpen: false }));
-  }, []);
+    const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    setContextMenu({
+      isOpen: true,
+      position: { x: event.clientX, y: event.clientY },
+      flowPosition: flowPos,
+      type: 'pane',
+      targetId: null,
+      currentStyle: null
+    });
+  }, [screenToFlowPosition]);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
@@ -364,6 +457,61 @@ function MindMap({ bookId }) {
       })
     );
   }, [setEdges]);
+
+  // Aggiungi nodo testo in una posizione specifica
+  const handleAddNodeAtPosition = useCallback((position) => {
+    const selectedMap = mindmaps.find(m => m.id === selectedMapId);
+    const mapColor = selectedMap?.color || '#3b82f6';
+
+    const newNode = {
+      id: `node_${Date.now()}`,
+      data: { label: 'Nuovo concetto' },
+      position: position,
+      style: {
+        background: lightenColor(mapColor, 80),
+        border: `2px solid ${mapColor}`,
+        borderRadius: '8px',
+        padding: '10px',
+        fontSize: '12px',
+      },
+    };
+
+    setNodes((nds) => [...nds, newNode]);
+  }, [setNodes, mindmaps, selectedMapId]);
+
+  // Incolla immagine da clipboard in una posizione
+  const handlePasteImageAtPosition = useCallback(async (position) => {
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find(type => type.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const base64 = await blobToBase64(blob);
+          addImageNode(base64, position);
+          return;
+        }
+      }
+      console.log('[MindMap] Nessuna immagine negli appunti');
+    } catch (err) {
+      console.error('[MindMap] Errore lettura clipboard:', err);
+    }
+  }, [addImageNode]);
+
+  // Carica immagine da file
+  const handleAddImageFromFile = useCallback((position) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        const base64 = await blobToBase64(file);
+        addImageNode(base64, position);
+      }
+    };
+    input.click();
+  }, [addImageNode]);
 
   const addNode = () => {
     if (!nodeLabel.trim()) return;
@@ -440,7 +588,6 @@ function MindMap({ bookId }) {
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="border-b border-gray-200 p-3 bg-gray-50">
-        {/* Selettore mappa */}
         <MindMapSelector
           mindmaps={mindmaps}
           selectedId={selectedMapId}
@@ -451,7 +598,6 @@ function MindMap({ bookId }) {
           onDelete={handleDeleteMap}
         />
 
-        {/* Input nuovo nodo */}
         <div className="flex items-center gap-2 mt-3 mb-2">
           <input
             type="text"
@@ -469,7 +615,6 @@ function MindMap({ bookId }) {
           </button>
         </div>
 
-        {/* Azioni mappa */}
         <div className="flex items-center gap-2">
           <button
             onClick={exportAsJSON}
@@ -493,17 +638,18 @@ function MindMap({ bookId }) {
         </div>
 
         <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-800">
-          💡 <strong>Suggerimento:</strong> Aggiungi nodi e trascinali.
-          Collega i concetti cliccando e trascinando dai cerchi sui bordi dei nodi.
+          💡 <strong>Suggerimento:</strong> Click destro per menu contestuale.
+          Ctrl+V per incollare immagini.
           <span className="ml-2 text-green-600">Salvataggio automatico attivo.</span>
         </div>
       </div>
 
       {/* React Flow Canvas */}
-      <div className="flex-1 bg-gray-50">
+      <div className="flex-1 bg-gray-50" ref={flowRef} tabIndex={0}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -518,6 +664,7 @@ function MindMap({ bookId }) {
           <MiniMap
             nodeColor={(node) => {
               if (node.type === 'input') return selectedMap?.color || '#3b82f6';
+              if (node.type === 'imageNode') return '#94a3b8';
               return lightenColor(selectedMap?.color || '#3b82f6', 60);
             }}
             style={{
@@ -533,9 +680,10 @@ function MindMap({ bookId }) {
       <div className="border-t border-gray-200 p-2 bg-gray-50">
         <div className="flex items-center justify-between text-xs text-gray-600">
           <div className="flex items-center gap-4">
-            <span>🖱️ Click & Drag: Sposta</span>
+            <span>🖱️ Drag: Sposta</span>
             <span>⭕ Cerchi: Collega</span>
-            <span>🖱️ Dx: Modifica stile</span>
+            <span>🖱️ Dx: Menu</span>
+            <span>📋 Ctrl+V: Incolla</span>
             <span>🗑️ Del: Elimina</span>
           </div>
           <div>
@@ -563,14 +711,27 @@ function MindMap({ bookId }) {
       <MindMapContextMenu
         isOpen={contextMenu.isOpen}
         position={contextMenu.position}
+        flowPosition={contextMenu.flowPosition}
         type={contextMenu.type}
         targetId={contextMenu.targetId}
         currentStyle={contextMenu.currentStyle}
         onClose={closeContextMenu}
         onUpdateNode={handleUpdateNode}
         onUpdateEdge={handleUpdateEdge}
+        onAddNode={handleAddNodeAtPosition}
+        onAddImage={handleAddImageFromFile}
+        onPasteImage={handlePasteImageAtPosition}
       />
     </div>
+  );
+}
+
+// Wrapper con ReactFlowProvider
+function MindMap({ bookId }) {
+  return (
+    <ReactFlowProvider>
+      <MindMapInner bookId={bookId} />
+    </ReactFlowProvider>
   );
 }
 

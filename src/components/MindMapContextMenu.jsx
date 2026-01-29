@@ -25,27 +25,35 @@ const LINE_STYLES = [
 ];
 
 /**
- * Menu contestuale per nodi e frecce della mappa mentale
+ * Menu contestuale per nodi, frecce e sfondo della mappa mentale
  *
  * Props:
  * - isOpen: boolean
- * - position: { x, y }
- * - type: 'node' | 'edge'
+ * - position: { x, y } - posizione schermo del menu
+ * - flowPosition: { x, y } - posizione nel canvas ReactFlow (per aggiungere elementi)
+ * - type: 'node' | 'edge' | 'pane'
  * - targetId: string - ID del nodo/edge selezionato
  * - currentStyle: object - Stile corrente dell'elemento
  * - onClose: () => void
  * - onUpdateNode: (nodeId, styleUpdates) => void
  * - onUpdateEdge: (edgeId, styleUpdates) => void
+ * - onAddNode: (position) => void - Aggiunge un nuovo nodo testo
+ * - onAddImage: (position) => void - Apre dialog per aggiungere immagine
+ * - onPasteImage: (position) => void - Incolla immagine da clipboard
  */
 function MindMapContextMenu({
   isOpen,
   position,
+  flowPosition,
   type,
   targetId,
   currentStyle,
   onClose,
   onUpdateNode,
-  onUpdateEdge
+  onUpdateEdge,
+  onAddNode,
+  onAddImage,
+  onPasteImage
 }) {
   const menuRef = useRef(null);
   const [activeSubmenu, setActiveSubmenu] = useState(null);
@@ -332,6 +340,59 @@ function MindMapContextMenu({
                 </div>
               </div>
             )}
+          </div>
+        </>
+      )}
+
+      {type === 'pane' && (
+        <>
+          {/* Aggiungi nuovo nodo */}
+          <div className="mindmap-context-menu-item">
+            <button
+              className="mindmap-context-menu-btn"
+              onClick={() => {
+                if (onAddNode && flowPosition) {
+                  onAddNode(flowPosition);
+                }
+                onClose();
+              }}
+            >
+              <span className="mindmap-context-menu-icon">📝</span>
+              <span>Aggiungi nodo</span>
+            </button>
+          </div>
+
+          {/* Incolla immagine da clipboard */}
+          <div className="mindmap-context-menu-item">
+            <button
+              className="mindmap-context-menu-btn"
+              onClick={() => {
+                if (onPasteImage && flowPosition) {
+                  onPasteImage(flowPosition);
+                }
+                onClose();
+              }}
+            >
+              <span className="mindmap-context-menu-icon">📋</span>
+              <span>Incolla immagine</span>
+              <span className="mindmap-context-menu-shortcut">Ctrl+V</span>
+            </button>
+          </div>
+
+          {/* Carica immagine da file */}
+          <div className="mindmap-context-menu-item">
+            <button
+              className="mindmap-context-menu-btn"
+              onClick={() => {
+                if (onAddImage && flowPosition) {
+                  onAddImage(flowPosition);
+                }
+                onClose();
+              }}
+            >
+              <span className="mindmap-context-menu-icon">🖼️</span>
+              <span>Carica immagine...</span>
+            </button>
           </div>
         </>
       )}
