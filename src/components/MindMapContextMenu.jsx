@@ -26,20 +26,6 @@ const LINE_STYLES = [
 
 /**
  * Menu contestuale per nodi, frecce e sfondo della mappa mentale
- *
- * Props:
- * - isOpen: boolean
- * - position: { x, y } - posizione schermo del menu
- * - flowPosition: { x, y } - posizione nel canvas ReactFlow (per aggiungere elementi)
- * - type: 'node' | 'edge' | 'pane'
- * - targetId: string - ID del nodo/edge selezionato
- * - currentStyle: object - Stile corrente dell'elemento
- * - onClose: () => void
- * - onUpdateNode: (nodeId, styleUpdates) => void
- * - onUpdateEdge: (edgeId, styleUpdates) => void
- * - onAddNode: (position) => void - Aggiunge un nuovo nodo testo
- * - onAddImage: (position) => void - Apre dialog per aggiungere immagine
- * - onPasteImage: (position) => void - Incolla immagine da clipboard
  */
 function MindMapContextMenu({
   isOpen,
@@ -48,15 +34,20 @@ function MindMapContextMenu({
   type,
   targetId,
   currentStyle,
+  isImageNode,
   onClose,
   onUpdateNode,
   onUpdateEdge,
   onAddNode,
   onAddImage,
-  onPasteImage
+  onPasteImage,
+  onDeleteNode,
+  onDuplicateNode,
+  onDeleteEdge
 }) {
   const menuRef = useRef(null);
   const [activeSubmenu, setActiveSubmenu] = useState(null);
+  const [localOpacity, setLocalOpacity] = useState(1);
 
   // Chiudi menu quando si clicca fuori
   useEffect(() => {
@@ -86,18 +77,45 @@ function MindMapContextMenu({
     if (!isOpen) setActiveSubmenu(null);
   }, [isOpen]);
 
+  // Inizializza opacità locale quando si apre il menu
+  useEffect(() => {
+    if (isOpen && type === 'node' && currentStyle) {
+      const bg = currentStyle.background || currentStyle.backgroundColor || '';
+      if (bg.startsWith('rgba')) {
+        const match = bg.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)/);
+        if (match) {
+          setLocalOpacity(parseFloat(match[1]));
+          return;
+        }
+      }
+      setLocalOpacity(1);
+    }
+  }, [isOpen, type, currentStyle]);
+
   if (!isOpen) return null;
 
   // Estrai colori correnti dal nodo
   const getNodeColors = () => {
-    if (!currentStyle) return { fill: '#f0f9ff', border: '#3b82f6', text: '#1f2937' };
+    if (!currentStyle) return { fill: '#f0f9ff', border: '#3b82f6', text: '#1f2937', opacity: 1 };
 
-    const fill = currentStyle.background || currentStyle.backgroundColor || '#f0f9ff';
+    let fill = currentStyle.background || currentStyle.backgroundColor || '#f0f9ff';
+    let opacity = 1;
+
+    // Estrai opacità se il colore è in formato rgba
+    if (fill.startsWith('rgba')) {
+      const match = fill.match(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/);
+      if (match) {
+        opacity = parseFloat(match[4]);
+        // Converti in hex per la visualizzazione
+        fill = `#${parseInt(match[1]).toString(16).padStart(2, '0')}${parseInt(match[2]).toString(16).padStart(2, '0')}${parseInt(match[3]).toString(16).padStart(2, '0')}`;
+      }
+    }
+
     const border = currentStyle.borderColor ||
       (currentStyle.border ? currentStyle.border.split(' ').pop() : '#3b82f6');
     const text = currentStyle.color || '#1f2937';
 
-    return { fill, border, text };
+    return { fill, border, text, opacity };
   };
 
   // Estrai stile corrente dell'edge
@@ -117,16 +135,23 @@ function MindMapContextMenu({
     return { color, lineStyle };
   };
 
+  // Converte hex in rgba
+  const hexToRgba = (hex, opacity) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
+
   const handleNodeColorChange = (colorType, color) => {
     if (!onUpdateNode || !targetId) return;
 
-    const nodeColors = getNodeColors();
     let styleUpdate = {};
 
     if (colorType === 'fill') {
-      styleUpdate.background = color;
+      // Applica il colore con l'opacità corrente
+      styleUpdate.background = localOpacity < 1 ? hexToRgba(color, localOpacity) : color;
     } else if (colorType === 'border') {
-      // Preserva larghezza bordo e stile
       const borderWidth = currentStyle?.borderWidth || '2px';
       styleUpdate.border = `${borderWidth} solid ${color}`;
     } else if (colorType === 'text') {
@@ -135,6 +160,22 @@ function MindMapContextMenu({
 
     onUpdateNode(targetId, styleUpdate);
     setActiveSubmenu(null);
+  };
+
+  const handleOpacityChange = (newOpacity) => {
+    if (!onUpdateNode || !targetId) return;
+
+    setLocalOpacity(newOpacity);
+
+    // Ottieni il colore corrente e applica la nuova opacità
+    const nodeColors = getNodeColors();
+    const fillColor = nodeColors.fill;
+
+    const styleUpdate = {
+      background: newOpacity < 1 ? hexToRgba(fillColor, newOpacity) : fillColor
+    };
+
+    onUpdateNode(targetId, styleUpdate);
   };
 
   const handleEdgeStyleChange = (styleType, value) => {
@@ -167,7 +208,7 @@ function MindMapContextMenu({
         zIndex: 1000
       }}
     >
-      {type === 'node' && (
+      {type === 'node' && !isImageNode && (
         <>
           {/* Colore riempimento */}
           <div className="mindmap-context-menu-item">
@@ -194,6 +235,21 @@ function MindMapContextMenu({
                       title={c.name}
                     />
                   ))}
+                </div>
+                {/* Slider opacità */}
+                <div className="mindmap-context-opacity">
+                  <label className="mindmap-context-opacity-label">
+                    Opacità: {Math.round(localOpacity * 100)}%
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={localOpacity}
+                    onChange={(e) => handleOpacityChange(parseFloat(e.target.value))}
+                    className="mindmap-context-opacity-slider"
+                  />
                 </div>
               </div>
             )}
@@ -262,6 +318,46 @@ function MindMapContextMenu({
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="mindmap-context-menu-separator" />
+        </>
+      )}
+
+      {/* Duplica e Elimina per nodi (testo e immagine) */}
+      {type === 'node' && (
+        <>
+          {/* Duplica */}
+          <div className="mindmap-context-menu-item">
+            <button
+              className="mindmap-context-menu-btn"
+              onClick={() => {
+                if (onDuplicateNode && targetId) {
+                  onDuplicateNode(targetId);
+                }
+                onClose();
+              }}
+            >
+              <span className="mindmap-context-menu-icon">📋</span>
+              <span>Duplica</span>
+            </button>
+          </div>
+
+          {/* Elimina */}
+          <div className="mindmap-context-menu-item">
+            <button
+              className="mindmap-context-menu-btn mindmap-context-menu-btn-danger"
+              onClick={() => {
+                if (onDeleteNode && targetId) {
+                  onDeleteNode(targetId);
+                }
+                onClose();
+              }}
+            >
+              <span className="mindmap-context-menu-icon">🗑️</span>
+              <span>Elimina</span>
+              <span className="mindmap-context-menu-shortcut">Del</span>
+            </button>
           </div>
         </>
       )}
@@ -341,6 +437,25 @@ function MindMapContextMenu({
               </div>
             )}
           </div>
+
+          <div className="mindmap-context-menu-separator" />
+
+          {/* Elimina collegamento */}
+          <div className="mindmap-context-menu-item">
+            <button
+              className="mindmap-context-menu-btn mindmap-context-menu-btn-danger"
+              onClick={() => {
+                if (onDeleteEdge && targetId) {
+                  onDeleteEdge(targetId);
+                }
+                onClose();
+              }}
+            >
+              <span className="mindmap-context-menu-icon">🗑️</span>
+              <span>Elimina collegamento</span>
+              <span className="mindmap-context-menu-shortcut">Del</span>
+            </button>
+          </div>
         </>
       )}
 
@@ -361,6 +476,8 @@ function MindMapContextMenu({
               <span>Aggiungi nodo</span>
             </button>
           </div>
+
+          <div className="mindmap-context-menu-separator" />
 
           {/* Incolla immagine da clipboard */}
           <div className="mindmap-context-menu-item">

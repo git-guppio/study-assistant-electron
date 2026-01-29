@@ -8,8 +8,7 @@ import React, { useState, useRef, useEffect } from 'react';
  * - selectedId: ID mappa selezionata
  * - onSelect: (id) => void
  * - onNew: () => void
- * - onRename: (id) => void
- * - onChangeColor: (id) => void
+ * - onEdit: (id) => void
  * - onDelete: (id) => void
  */
 function MindMapSelector({
@@ -17,8 +16,7 @@ function MindMapSelector({
   selectedId,
   onSelect,
   onNew,
-  onRename,
-  onChangeColor,
+  onEdit,
   onDelete
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -82,20 +80,12 @@ function MindMapSelector({
           +
         </button>
         <button
-          className="mindmap-action-btn"
-          onClick={() => selectedId && onRename(selectedId)}
+          className="mindmap-action-btn-edit"
+          onClick={() => selectedId && onEdit(selectedId)}
           disabled={!selectedId}
-          title="Rinomina"
+          title="Modifica mappa"
         >
-          ✎
-        </button>
-        <button
-          className="mindmap-action-btn"
-          onClick={() => selectedId && onChangeColor(selectedId)}
-          disabled={!selectedId}
-          title="Cambia colore"
-        >
-          🎨
+          ✏️
         </button>
         <button
           className="mindmap-action-btn mindmap-action-btn-danger"

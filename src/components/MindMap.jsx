@@ -16,26 +16,30 @@ import MindMapSelector from './MindMapSelector';
 import MindMapDialog from './MindMapDialog';
 import MindMapContextMenu from './MindMapContextMenu';
 import MindMapImageNode from './MindMapImageNode';
+import MindMapTextNode from './MindMapTextNode';
 import { showConfirmDialog } from '../utils/confirmDialog';
 
 // Nodo iniziale per nuove mappe
-const createInitialNodes = (color = '#3b82f6') => [
-  {
-    id: '1',
-    type: 'input',
-    data: { label: 'Concetto Principale' },
-    position: { x: 250, y: 25 },
-    style: {
-      background: color,
-      color: 'white',
-      border: `2px solid ${darkenColor(color, 20)}`,
-      borderRadius: '8px',
-      padding: '10px',
-      fontSize: '14px',
-      fontWeight: 'bold',
+const createInitialNodes = (color = '#3b82f6') => {
+  const style = {
+    background: color,
+    color: 'white',
+    border: `2px solid ${darkenColor(color, 20)}`,
+    borderRadius: '8px',
+    padding: '10px',
+    fontSize: '14px',
+    fontWeight: 'bold',
+  };
+  return [
+    {
+      id: '1',
+      type: 'textNode',
+      data: { label: 'Concetto Principale', style },
+      position: { x: 250, y: 25 },
+      // Non impostare node.style per nodi custom - usa solo data.style
     },
-  },
-];
+  ];
+};
 
 const initialEdges = [];
 
@@ -63,7 +67,6 @@ function lightenColor(hex, percent) {
 function MindMapInner({ bookId }) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [nodeLabel, setNodeLabel] = useState('');
   const { screenToFlowPosition } = useReactFlow();
   const flowRef = useRef(null);
 
@@ -74,7 +77,7 @@ function MindMapInner({ bookId }) {
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState('new');
+  const [isEditingMap, setIsEditingMap] = useState(false);
   const [editingMapId, setEditingMapId] = useState(null);
 
   // Auto-save con debounce
@@ -88,10 +91,11 @@ function MindMapInner({ bookId }) {
     flowPosition: { x: 0, y: 0 },
     type: null,
     targetId: null,
-    currentStyle: null
+    currentStyle: null,
+    isImageNode: false
   });
 
-  // Handler per resize immagini - passato ai nodi immagine
+  // Handler per resize immagini
   const handleImageResize = useCallback((nodeId, dimensions) => {
     setNodes((nds) =>
       nds.map((node) => {
@@ -110,15 +114,39 @@ function MindMapInner({ bookId }) {
     );
   }, [setNodes]);
 
-  // Tipi di nodo custom con handler resize
+  // Handler per cambio label dei nodi testo
+  const handleLabelChange = useCallback((nodeId, newLabel) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === nodeId) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              label: newLabel
+            }
+          };
+        }
+        return node;
+      })
+    );
+  }, [setNodes]);
+
+  // Tipi di nodo custom
   const nodeTypes = useMemo(() => ({
+    textNode: (props) => (
+      <MindMapTextNode
+        {...props}
+        data={{ ...props.data, onLabelChange: handleLabelChange }}
+      />
+    ),
     imageNode: (props) => (
       <MindMapImageNode
         {...props}
         data={{ ...props.data, onResize: handleImageResize }}
       />
     )
-  }), [handleImageResize]);
+  }), [handleImageResize, handleLabelChange]);
 
   // Carica lista mappe all'avvio
   useEffect(() => {
@@ -152,7 +180,6 @@ function MindMapInner({ bookId }) {
   // Handler per Ctrl+V (incolla immagine)
   useEffect(() => {
     const handlePaste = async (e) => {
-      // Solo se il focus è sulla mappa
       if (!flowRef.current?.contains(document.activeElement) &&
           document.activeElement !== flowRef.current) {
         return;
@@ -167,7 +194,6 @@ function MindMapInner({ bookId }) {
           const blob = item.getAsFile();
           if (blob) {
             const base64 = await blobToBase64(blob);
-            // Aggiungi immagine al centro della viewport
             const centerPosition = screenToFlowPosition({
               x: window.innerWidth / 2,
               y: window.innerHeight / 2
@@ -183,7 +209,6 @@ function MindMapInner({ bookId }) {
     return () => document.removeEventListener('paste', handlePaste);
   }, [screenToFlowPosition]);
 
-  // Converti blob in base64
   const blobToBase64 = (blob) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -193,7 +218,6 @@ function MindMapInner({ bookId }) {
     });
   };
 
-  // Aggiungi nodo immagine
   const addImageNode = useCallback((imageData, position) => {
     const newNode = {
       id: `img_${Date.now()}`,
@@ -240,7 +264,31 @@ function MindMapInner({ bookId }) {
 
   const loadMapData = (map) => {
     if (map && map.data) {
-      setNodes(map.data.nodes || createInitialNodes(map.color));
+      // Migra i nodi vecchi al nuovo formato textNode
+      const migratedNodes = (map.data.nodes || createInitialNodes(map.color)).map(node => {
+        // Salta i nodi immagine
+        if (node.type === 'imageNode') return node;
+
+        // Migra nodi 'input', 'default', o senza tipo a 'textNode'
+        const needsMigration = !node.type || node.type === 'input' || node.type === 'default';
+
+        if (needsMigration || node.type === 'textNode') {
+          // Sposta lo style da node.style a data.style se necessario
+          const style = node.data?.style || node.style;
+          return {
+            ...node,
+            type: 'textNode',
+            style: undefined, // Rimuovi node.style per evitare doppia cornice
+            data: {
+              ...node.data,
+              style: style
+            }
+          };
+        }
+        return node;
+      });
+
+      setNodes(migratedNodes);
       setEdges(map.data.edges || initialEdges);
     } else {
       setNodes(createInitialNodes(map?.color || '#3b82f6'));
@@ -270,19 +318,13 @@ function MindMapInner({ bookId }) {
   };
 
   const handleNewMap = () => {
-    setDialogMode('new');
+    setIsEditingMap(false);
     setEditingMapId(null);
     setDialogOpen(true);
   };
 
-  const handleRenameMap = (id) => {
-    setDialogMode('rename');
-    setEditingMapId(id);
-    setDialogOpen(true);
-  };
-
-  const handleChangeColor = (id) => {
-    setDialogMode('color');
+  const handleEditMap = (id) => {
+    setIsEditingMap(true);
     setEditingMapId(id);
     setDialogOpen(true);
   };
@@ -318,42 +360,37 @@ function MindMapInner({ bookId }) {
     const db = getDatabase();
     if (!db) return;
 
-    if (dialogMode === 'new') {
-      const existingNames = mindmaps.map(m => m.name);
-      let newName = name;
-      if (!name) {
-        let counter = mindmaps.length + 1;
-        while (existingNames.includes(`Mappa ${counter}`)) {
-          counter++;
-        }
-        newName = `Mappa ${counter}`;
-      }
-
-      const newMap = await db.createMindmap(newName, color);
+    if (!isEditingMap) {
+      // Nuova mappa
+      const newMap = await db.createMindmap(name, color);
       if (newMap) {
         const updatedMaps = await db.getAllMindmaps();
         setMindmaps(updatedMaps);
         setSelectedMapId(newMap.id);
         loadMapData(newMap);
       }
-    } else if (dialogMode === 'rename' && editingMapId) {
-      await db.updateMindmapInfo(editingMapId, { name });
-      const updatedMaps = await db.getAllMindmaps();
-      setMindmaps(updatedMaps);
-    } else if (dialogMode === 'color' && editingMapId) {
-      await db.updateMindmapInfo(editingMapId, { color });
+    } else if (editingMapId) {
+      // Modifica mappa esistente
+      await db.updateMindmapInfo(editingMapId, { name, color });
       const updatedMaps = await db.getAllMindmaps();
       setMindmaps(updatedMaps);
 
+      // Aggiorna colore nodo principale se è la mappa corrente
       if (editingMapId === selectedMapId) {
         setNodes(nds => nds.map(node => {
-          if (node.type === 'input') {
+          // Il nodo principale è quello con id '1'
+          if (node.id === '1' && node.type === 'textNode') {
+            const currentStyle = node.data?.style || {};
             return {
               ...node,
-              style: {
-                ...node.style,
-                background: color,
-                border: `2px solid ${darkenColor(color, 20)}`,
+              style: undefined,
+              data: {
+                ...node.data,
+                style: {
+                  ...currentStyle,
+                  background: color,
+                  border: `2px solid ${darkenColor(color, 20)}`,
+                }
               }
             };
           }
@@ -389,7 +426,8 @@ function MindMapInner({ bookId }) {
       flowPosition: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
       type: 'node',
       targetId: node.id,
-      currentStyle: node.style || {}
+      currentStyle: node.data?.style || node.style || {},
+      isImageNode: node.type === 'imageNode'
     });
   }, [screenToFlowPosition]);
 
@@ -401,7 +439,8 @@ function MindMapInner({ bookId }) {
       flowPosition: screenToFlowPosition({ x: event.clientX, y: event.clientY }),
       type: 'edge',
       targetId: edge.id,
-      currentStyle: edge.style || {}
+      currentStyle: edge.style || {},
+      isImageNode: false
     });
   }, [screenToFlowPosition]);
 
@@ -414,7 +453,8 @@ function MindMapInner({ bookId }) {
       flowPosition: flowPos,
       type: 'pane',
       targetId: null,
-      currentStyle: null
+      currentStyle: null,
+      isImageNode: false
     });
   }, [screenToFlowPosition]);
 
@@ -427,11 +467,18 @@ function MindMapInner({ bookId }) {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === nodeId) {
+          const currentStyle = node.data?.style || node.style || {};
+          const newStyle = {
+            ...currentStyle,
+            ...styleUpdates
+          };
           return {
             ...node,
-            style: {
-              ...node.style,
-              ...styleUpdates
+            // Rimuovi node.style per evitare doppia cornice
+            style: undefined,
+            data: {
+              ...node.data,
+              style: newStyle
             }
           };
         }
@@ -458,22 +505,57 @@ function MindMapInner({ bookId }) {
     );
   }, [setEdges]);
 
-  // Aggiungi nodo testo in una posizione specifica
+  // Elimina nodo
+  const handleDeleteNode = useCallback((nodeId) => {
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    // Elimina anche gli edge collegati
+    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+  }, [setNodes, setEdges]);
+
+  // Duplica nodo
+  const handleDuplicateNode = useCallback((nodeId) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    const newNode = {
+      ...node,
+      id: `${node.type === 'imageNode' ? 'img' : 'node'}_${Date.now()}`,
+      position: {
+        x: node.position.x + 50,
+        y: node.position.y + 50
+      },
+      data: { ...node.data },
+      // Non impostare node.style per textNode per evitare doppia cornice
+      style: node.type === 'imageNode' && node.style ? { ...node.style } : undefined
+    };
+
+    setNodes((nds) => [...nds, newNode]);
+  }, [nodes, setNodes]);
+
+  // Elimina edge
+  const handleDeleteEdge = useCallback((edgeId) => {
+    setEdges((eds) => eds.filter((edge) => edge.id !== edgeId));
+  }, [setEdges]);
+
+  // Aggiungi nodo in una posizione specifica
   const handleAddNodeAtPosition = useCallback((position) => {
     const selectedMap = mindmaps.find(m => m.id === selectedMapId);
     const mapColor = selectedMap?.color || '#3b82f6';
 
+    const style = {
+      background: lightenColor(mapColor, 80),
+      border: `2px solid ${mapColor}`,
+      borderRadius: '8px',
+      padding: '10px',
+      fontSize: '12px',
+    };
+
     const newNode = {
       id: `node_${Date.now()}`,
-      data: { label: 'Nuovo concetto' },
+      type: 'textNode',
+      data: { label: 'Nuovo concetto', style },
       position: position,
-      style: {
-        background: lightenColor(mapColor, 80),
-        border: `2px solid ${mapColor}`,
-        borderRadius: '8px',
-        padding: '10px',
-        fontSize: '12px',
-      },
+      // Non impostare node.style per nodi custom - usa solo data.style
     };
 
     setNodes((nds) => [...nds, newNode]);
@@ -513,67 +595,6 @@ function MindMapInner({ bookId }) {
     input.click();
   }, [addImageNode]);
 
-  const addNode = () => {
-    if (!nodeLabel.trim()) return;
-
-    const selectedMap = mindmaps.find(m => m.id === selectedMapId);
-    const mapColor = selectedMap?.color || '#3b82f6';
-
-    const newNode = {
-      id: `node_${Date.now()}`,
-      data: { label: nodeLabel },
-      position: {
-        x: Math.random() * 500 + 100,
-        y: Math.random() * 400 + 100,
-      },
-      style: {
-        background: lightenColor(mapColor, 80),
-        border: `2px solid ${mapColor}`,
-        borderRadius: '8px',
-        padding: '10px',
-        fontSize: '12px',
-      },
-    };
-
-    setNodes((nds) => [...nds, newNode]);
-    setNodeLabel('');
-  };
-
-  const clearMindmap = async () => {
-    const confirmed = await showConfirmDialog({
-      title: '🗺️ Cancella mappa',
-      message: 'Vuoi cancellare tutti i nodi e collegamenti della mappa corrente?',
-      confirmText: 'Cancella',
-      confirmColor: '#dc2626'
-    });
-
-    if (confirmed) {
-      const selectedMap = mindmaps.find(m => m.id === selectedMapId);
-      const mapColor = selectedMap?.color || '#3b82f6';
-      setNodes(createInitialNodes(mapColor));
-      setEdges(initialEdges);
-    }
-  };
-
-  const exportAsJSON = () => {
-    const selectedMap = mindmaps.find(m => m.id === selectedMapId);
-    const data = {
-      name: selectedMap?.name || 'mindmap',
-      color: selectedMap?.color,
-      nodes,
-      edges,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${selectedMap?.name || 'mindmap'}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const selectedMap = mindmaps.find(m => m.id === selectedMapId);
 
   if (loading) {
@@ -586,61 +607,21 @@ function MindMapInner({ bookId }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="border-b border-gray-200 p-3 bg-gray-50">
-        <MindMapSelector
-          mindmaps={mindmaps}
-          selectedId={selectedMapId}
-          onSelect={handleSelectMap}
-          onNew={handleNewMap}
-          onRename={handleRenameMap}
-          onChangeColor={handleChangeColor}
-          onDelete={handleDeleteMap}
-        />
-
-        <div className="flex items-center gap-2 mt-3 mb-2">
-          <input
-            type="text"
-            value={nodeLabel}
-            onChange={(e) => setNodeLabel(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && addNode()}
-            placeholder="Aggiungi nuovo concetto..."
-            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+      {/* Toolbar compatta */}
+      <div className="border-b border-gray-200 p-2 bg-gray-50">
+        <div className="flex items-center justify-between">
+          <MindMapSelector
+            mindmaps={mindmaps}
+            selectedId={selectedMapId}
+            onSelect={handleSelectMap}
+            onNew={handleNewMap}
+            onEdit={handleEditMap}
+            onDelete={handleDeleteMap}
           />
-          <button
-            onClick={addNode}
-            className="px-4 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            ➕ Aggiungi
-          </button>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={exportAsJSON}
-            className="px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
-          >
-            📤 Esporta JSON
-          </button>
-          <button
-            onClick={clearMindmap}
-            className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
-          >
-            🗑️ Cancella
-          </button>
-
-          <div className="flex-1"></div>
-
-          <div className="text-xs text-gray-600">
+          <div className="text-xs text-gray-500">
             {nodes.length} nodi • {edges.length} collegamenti
-            {hasChangesRef.current && <span className="ml-2 text-orange-500">●</span>}
           </div>
-        </div>
-
-        <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-800">
-          💡 <strong>Suggerimento:</strong> Click destro per menu contestuale.
-          Ctrl+V per incollare immagini.
-          <span className="ml-2 text-green-600">Salvataggio automatico attivo.</span>
         </div>
       </div>
 
@@ -663,9 +644,20 @@ function MindMapInner({ bookId }) {
           <Controls />
           <MiniMap
             nodeColor={(node) => {
-              if (node.type === 'input') return selectedMap?.color || '#3b82f6';
               if (node.type === 'imageNode') return '#94a3b8';
-              return lightenColor(selectedMap?.color || '#3b82f6', 60);
+              // Usa il colore dal data.style se disponibile
+              const bgColor = node.data?.style?.background;
+              if (bgColor) {
+                // Se è rgba, estrai il colore base
+                if (bgColor.startsWith('rgba')) {
+                  const match = bgColor.match(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+                  if (match) {
+                    return `rgb(${match[1]}, ${match[2]}, ${match[3]})`;
+                  }
+                }
+                return bgColor;
+              }
+              return selectedMap?.color || '#3b82f6';
             }}
             style={{
               background: '#f9fafb',
@@ -676,31 +668,10 @@ function MindMapInner({ bookId }) {
         </ReactFlow>
       </div>
 
-      {/* Legend */}
-      <div className="border-t border-gray-200 p-2 bg-gray-50">
-        <div className="flex items-center justify-between text-xs text-gray-600">
-          <div className="flex items-center gap-4">
-            <span>🖱️ Drag: Sposta</span>
-            <span>⭕ Cerchi: Collega</span>
-            <span>🖱️ Dx: Menu</span>
-            <span>📋 Ctrl+V: Incolla</span>
-            <span>🗑️ Del: Elimina</span>
-          </div>
-          <div>
-            <span
-              className="px-2 py-1 rounded text-xs text-white"
-              style={{ backgroundColor: selectedMap?.color || '#3b82f6' }}
-            >
-              {selectedMap?.name || 'Nodo Principale'}
-            </span>
-          </div>
-        </div>
-      </div>
-
       {/* Dialog */}
       <MindMapDialog
         isOpen={dialogOpen}
-        mode={dialogMode}
+        isEditing={isEditingMap}
         initialName={editingMapId ? mindmaps.find(m => m.id === editingMapId)?.name : ''}
         initialColor={editingMapId ? mindmaps.find(m => m.id === editingMapId)?.color : '#3b82f6'}
         onClose={() => setDialogOpen(false)}
@@ -715,12 +686,16 @@ function MindMapInner({ bookId }) {
         type={contextMenu.type}
         targetId={contextMenu.targetId}
         currentStyle={contextMenu.currentStyle}
+        isImageNode={contextMenu.isImageNode}
         onClose={closeContextMenu}
         onUpdateNode={handleUpdateNode}
         onUpdateEdge={handleUpdateEdge}
         onAddNode={handleAddNodeAtPosition}
         onAddImage={handleAddImageFromFile}
         onPasteImage={handlePasteImageAtPosition}
+        onDeleteNode={handleDeleteNode}
+        onDuplicateNode={handleDuplicateNode}
+        onDeleteEdge={handleDeleteEdge}
       />
     </div>
   );
