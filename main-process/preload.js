@@ -41,9 +41,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbUpdateAnnotation: (id, updates) => ipcRenderer.invoke('db-update-annotation', { id, updates }),
   dbDeleteAnnotation: (id) => ipcRenderer.invoke('db-delete-annotation', id),
 
-  // Mindmap
+  // Mindmap (legacy)
   dbGetMindmap: () => ipcRenderer.invoke('db-get-mindmap'),
   dbSaveMindmap: (data) => ipcRenderer.invoke('db-save-mindmap', data),
+
+  // Mindmaps (multiple)
+  dbGetAllMindmaps: () => ipcRenderer.invoke('db-get-all-mindmaps'),
+  dbGetMindmapById: (id) => ipcRenderer.invoke('db-get-mindmap-by-id', id),
+  dbCreateMindmap: (name, color) => ipcRenderer.invoke('db-create-mindmap', name, color),
+  dbUpdateMindmapData: (id, data) => ipcRenderer.invoke('db-update-mindmap-data', id, data),
+  dbUpdateMindmapInfo: (id, updates) => ipcRenderer.invoke('db-update-mindmap-info', id, updates),
+  dbDeleteMindmap: (id) => ipcRenderer.invoke('db-delete-mindmap', id),
+  dbCountMindmaps: () => ipcRenderer.invoke('db-count-mindmaps'),
 
   // Summary
   dbGetSummary: () => ipcRenderer.invoke('db-get-summary'),

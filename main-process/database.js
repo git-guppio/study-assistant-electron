@@ -203,11 +203,23 @@ function createTables() {
     )
   `);
 
-  // Tabella Mindmap
+  // Tabella Mindmap (legacy - singola mappa, mantenuta per retrocompatibilità)
   db.run(`
     CREATE TABLE IF NOT EXISTS mindmap (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       data TEXT,
+      updatedAt TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Tabella Mindmaps (nuova - multiple mappe)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS mindmaps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      color TEXT DEFAULT '#3b82f6',
+      data TEXT,
+      createdAt TEXT DEFAULT (datetime('now')),
       updatedAt TEXT DEFAULT (datetime('now'))
     )
   `);
@@ -241,10 +253,12 @@ function createTables() {
   db.run(`CREATE INDEX IF NOT EXISTS idx_dictionary_annotation ON dictionary_entries(annotationId)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_keywords_annotation ON keywords(annotationId)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_bookmarks_page ON bookmarks(pageNumber)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_mindmaps_updated ON mindmaps(updatedAt DESC)`);
 
   // Migrazioni
   migrateOutlineToNote();
   migrateDictionaryAndKeywords();
+  migrateMindmapToMindmaps();
 }
 
 /**
@@ -297,6 +311,33 @@ function migrateDictionaryAndKeywords() {
     }
   } catch (error) {
     console.error('[SQLite] Errore migrazione dictionary/keywords:', error);
+  }
+}
+
+/**
+ * Migra i dati dalla vecchia tabella mindmap (singola) alla nuova mindmaps (multiple)
+ */
+function migrateMindmapToMindmaps() {
+  try {
+    // Verifica se ci sono già mappe nella nuova tabella
+    const existingMaps = queryAll('SELECT COUNT(*) as count FROM mindmaps');
+    if (existingMaps.length > 0 && existingMaps[0].count > 0) {
+      return; // Già migrato o già popolato
+    }
+
+    // Verifica se c'è una mappa nella vecchia tabella
+    const oldMindmap = queryOne('SELECT * FROM mindmap WHERE id = 1');
+    if (oldMindmap && oldMindmap.data) {
+      // Migra alla nuova tabella
+      db.run(
+        'INSERT INTO mindmaps (name, color, data) VALUES (?, ?, ?)',
+        ['Mappa 1', '#3b82f6', oldMindmap.data]
+      );
+      console.log('[SQLite] Migrata mappa da mindmap a mindmaps');
+      saveToFile();
+    }
+  } catch (error) {
+    console.error('[SQLite] Errore migrazione mindmap:', error);
   }
 }
 
@@ -516,7 +557,7 @@ function deleteAnnotation(id) {
   return result.changes > 0;
 }
 
-// ==================== MINDMAP ====================
+// ==================== MINDMAP (Legacy - singola mappa) ====================
 
 function getMindmap() {
   const row = queryOne('SELECT * FROM mindmap WHERE id = 1');
@@ -539,6 +580,113 @@ function saveMindmap(data) {
     [JSON.stringify(data)]
   );
   return getMindmap();
+}
+
+// ==================== MINDMAPS (Multiple mappe) ====================
+
+/**
+ * Ottieni tutte le mappe ordinate per data di modifica (più recente prima)
+ */
+function getAllMindmaps() {
+  const maps = queryAll('SELECT * FROM mindmaps ORDER BY updatedAt DESC');
+  return maps.map(m => ({
+    ...m,
+    data: m.data ? JSON.parse(m.data) : null
+  }));
+}
+
+/**
+ * Ottieni una mappa specifica per ID
+ */
+function getMindmapById(id) {
+  const map = queryOne('SELECT * FROM mindmaps WHERE id = ?', [id]);
+  if (map) {
+    map.data = map.data ? JSON.parse(map.data) : null;
+  }
+  return map;
+}
+
+/**
+ * Crea una nuova mappa con nodo principale iniziale
+ */
+function createMindmap(name, color = '#3b82f6') {
+  const initialData = {
+    nodes: [
+      {
+        id: '1',
+        type: 'input',
+        data: { label: 'Concetto Principale' },
+        position: { x: 250, y: 25 },
+        style: {
+          background: color,
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          padding: '10px 20px',
+          fontWeight: 'bold'
+        }
+      }
+    ],
+    edges: []
+  };
+
+  const result = runQuery(
+    'INSERT INTO mindmaps (name, color, data) VALUES (?, ?, ?)',
+    [name, color, JSON.stringify(initialData)]
+  );
+  return getMindmapById(result.lastInsertRowid);
+}
+
+/**
+ * Aggiorna i dati (nodes + edges) di una mappa
+ */
+function updateMindmapData(id, data) {
+  runQuery(
+    'UPDATE mindmaps SET data = ?, updatedAt = datetime("now") WHERE id = ?',
+    [JSON.stringify(data), id]
+  );
+  return getMindmapById(id);
+}
+
+/**
+ * Aggiorna nome e/o colore di una mappa
+ */
+function updateMindmapInfo(id, updates) {
+  const fields = [];
+  const values = [];
+
+  if (updates.name !== undefined) {
+    fields.push('name = ?');
+    values.push(updates.name);
+  }
+  if (updates.color !== undefined) {
+    fields.push('color = ?');
+    values.push(updates.color);
+  }
+
+  if (fields.length === 0) return getMindmapById(id);
+
+  fields.push('updatedAt = datetime("now")');
+  values.push(id);
+
+  runQuery(`UPDATE mindmaps SET ${fields.join(', ')} WHERE id = ?`, values);
+  return getMindmapById(id);
+}
+
+/**
+ * Elimina una mappa
+ */
+function deleteMindmap(id) {
+  const result = runQuery('DELETE FROM mindmaps WHERE id = ?', [id]);
+  return result.changes > 0;
+}
+
+/**
+ * Conta il numero di mappe esistenti
+ */
+function countMindmaps() {
+  const result = queryOne('SELECT COUNT(*) as count FROM mindmaps');
+  return result ? result.count : 0;
 }
 
 // ==================== SUMMARY ====================
@@ -865,9 +1013,17 @@ module.exports = {
   saveAnnotation,
   updateAnnotation,
   deleteAnnotation,
-  // Mindmap
+  // Mindmap (legacy)
   getMindmap,
   saveMindmap,
+  // Mindmaps (multiple)
+  getAllMindmaps,
+  getMindmapById,
+  createMindmap,
+  updateMindmapData,
+  updateMindmapInfo,
+  deleteMindmap,
+  countMindmaps,
   // Summary
   getSummary,
   saveSummary,

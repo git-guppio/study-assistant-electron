@@ -1565,3 +1565,474 @@ canvas.pdf-page-canvas {
 .bookmarks-editor-action-btn:hover {
   background: #e5e7eb;
 }
+
+/* ===== MINDMAP SELECTOR ===== */
+.mindmap-selector {
+  position: relative;
+}
+
+.mindmap-selector-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mindmap-selector-label {
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.mindmap-selector-dropdown {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 180px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.mindmap-selector-dropdown:hover {
+  border-color: #9ca3af;
+}
+
+.mindmap-selector-dropdown:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.mindmap-selector-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.mindmap-selector-name {
+  flex: 1;
+  font-size: 13px;
+  color: #1f2937;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mindmap-selector-arrow {
+  font-size: 10px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.mindmap-action-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mindmap-action-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.mindmap-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mindmap-action-btn-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+/* Dropdown menu */
+.mindmap-selector-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  padding: 4px;
+}
+
+.mindmap-selector-empty {
+  padding: 12px 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.mindmap-selector-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.mindmap-selector-item:hover {
+  background: #f3f4f6;
+}
+
+.mindmap-selector-item.selected {
+  background: #eff6ff;
+}
+
+.mindmap-selector-item-name {
+  flex: 1;
+  font-size: 13px;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mindmap-selector-check {
+  color: #3b82f6;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* ===== MINDMAP DIALOG ===== */
+.mindmap-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mindmap-dialog {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  width: 360px;
+  max-width: 90vw;
+  animation: dialogSlideIn 0.2s ease-out;
+}
+
+@keyframes dialogSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.mindmap-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.mindmap-dialog-icon {
+  font-size: 20px;
+}
+
+.mindmap-dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.mindmap-dialog-body {
+  padding: 20px;
+}
+
+.mindmap-dialog-field {
+  margin-bottom: 16px;
+}
+
+.mindmap-dialog-field:last-child {
+  margin-bottom: 0;
+}
+
+.mindmap-dialog-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.mindmap-dialog-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.mindmap-dialog-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.mindmap-dialog-input::placeholder {
+  color: #9ca3af;
+}
+
+.mindmap-dialog-colors {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mindmap-color-swatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.mindmap-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.mindmap-color-swatch.selected {
+  border-color: #1f2937;
+  box-shadow: 0 0 0 2px white, 0 0 0 4px currentColor;
+}
+
+.mindmap-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 0 0 12px 12px;
+}
+
+.mindmap-dialog-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.mindmap-dialog-btn-cancel {
+  background: white;
+  border: 1px solid #d1d5db;
+  color: #374151;
+}
+
+.mindmap-dialog-btn-cancel:hover {
+  background: #f3f4f6;
+}
+
+.mindmap-dialog-btn-save {
+  background: #3b82f6;
+  border: none;
+  color: white;
+}
+
+.mindmap-dialog-btn-save:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.mindmap-dialog-btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== MINDMAP CONTEXT MENU ===== */
+.mindmap-context-menu {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+  padding: 4px;
+  animation: contextMenuFadeIn 0.1s ease-out;
+}
+
+@keyframes contextMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.mindmap-context-menu-item {
+  position: relative;
+}
+
+.mindmap-context-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #374151;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.mindmap-context-menu-btn:hover {
+  background: #f3f4f6;
+}
+
+.mindmap-context-menu-color-preview {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.mindmap-context-menu-text-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 14px;
+  background: transparent !important;
+  border: none !important;
+}
+
+.mindmap-context-menu-line-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+}
+
+.mindmap-context-menu-arrow {
+  margin-left: auto;
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+/* Submenu */
+.mindmap-context-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 8px;
+  margin-left: 4px;
+  min-width: 180px;
+  z-index: 1001;
+  animation: contextMenuFadeIn 0.1s ease-out;
+}
+
+.mindmap-context-colors {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.mindmap-context-color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.mindmap-context-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.mindmap-context-color-swatch.selected {
+  border-color: #1f2937;
+  box-shadow: 0 0 0 2px white, 0 0 0 4px #1f2937;
+}
+
+/* Stili linea */
+.mindmap-context-line-styles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mindmap-context-line-style-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #374151;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.mindmap-context-line-style-btn:hover {
+  background: #f3f4f6;
+}
+
+.mindmap-context-line-style-btn.selected {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.mindmap-context-line-style-btn svg {
+  flex-shrink: 0;
+}

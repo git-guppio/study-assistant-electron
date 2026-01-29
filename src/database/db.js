@@ -125,7 +125,7 @@ class DatabaseManager {
     return this.deleteAnnotation(id);
   }
 
-  // --- MINDMAP ---
+  // --- MINDMAP (legacy) ---
 
   async getMindmap() {
     if (!this.initialized) return null;
@@ -135,6 +135,43 @@ class DatabaseManager {
   async saveMindmap(data) {
     if (!this.initialized) return null;
     return await window.electronAPI.dbSaveMindmap(data);
+  }
+
+  // --- MINDMAPS (multiple) ---
+
+  async getAllMindmaps() {
+    if (!this.initialized) return [];
+    return await window.electronAPI.dbGetAllMindmaps();
+  }
+
+  async getMindmapById(id) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbGetMindmapById(id);
+  }
+
+  async createMindmap(name, color) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbCreateMindmap(name, color);
+  }
+
+  async updateMindmapData(id, data) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpdateMindmapData(id, data);
+  }
+
+  async updateMindmapInfo(id, updates) {
+    if (!this.initialized) return null;
+    return await window.electronAPI.dbUpdateMindmapInfo(id, updates);
+  }
+
+  async deleteMindmap(id) {
+    if (!this.initialized) return false;
+    return await window.electronAPI.dbDeleteMindmap(id);
+  }
+
+  async countMindmaps() {
+    if (!this.initialized) return 0;
+    return await window.electronAPI.dbCountMindmaps();
   }
 
   // --- SUMMARY ---

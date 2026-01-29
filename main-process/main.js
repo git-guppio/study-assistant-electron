@@ -301,13 +301,42 @@ ipcMain.handle('db-delete-annotation', (event, id) => {
   return getDatabase().deleteAnnotation(id);
 });
 
-// --- Mindmap ---
+// --- Mindmap (legacy) ---
 ipcMain.handle('db-get-mindmap', () => {
   return getDatabase().getMindmap();
 });
 
 ipcMain.handle('db-save-mindmap', (event, data) => {
   return getDatabase().saveMindmap(data);
+});
+
+// --- Mindmaps (multiple) ---
+ipcMain.handle('db-get-all-mindmaps', () => {
+  return getDatabase().getAllMindmaps();
+});
+
+ipcMain.handle('db-get-mindmap-by-id', (event, id) => {
+  return getDatabase().getMindmapById(id);
+});
+
+ipcMain.handle('db-create-mindmap', (event, name, color) => {
+  return getDatabase().createMindmap(name, color);
+});
+
+ipcMain.handle('db-update-mindmap-data', (event, id, data) => {
+  return getDatabase().updateMindmapData(id, data);
+});
+
+ipcMain.handle('db-update-mindmap-info', (event, id, updates) => {
+  return getDatabase().updateMindmapInfo(id, updates);
+});
+
+ipcMain.handle('db-delete-mindmap', (event, id) => {
+  return getDatabase().deleteMindmap(id);
+});
+
+ipcMain.handle('db-count-mindmaps', () => {
+  return getDatabase().countMindmaps();
 });
 
 // --- Summary ---
