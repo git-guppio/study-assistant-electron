@@ -209,6 +209,51 @@ function MindMapInner({ bookId }) {
     return () => document.removeEventListener('paste', handlePaste);
   }, [screenToFlowPosition]);
 
+  // Handler per tasto DEL (elimina nodi selezionati)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Verifica che il focus sia nel canvas della mappa
+      if (!flowRef.current?.contains(document.activeElement) &&
+          document.activeElement !== flowRef.current) {
+        return;
+      }
+
+      // Ignora se siamo in un input o textarea
+      if (document.activeElement?.tagName === 'INPUT' ||
+          document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+
+        // Trova nodi selezionati
+        const selectedNodes = nodes.filter(node => node.selected);
+
+        if (selectedNodes.length > 0) {
+          const selectedIds = selectedNodes.map(n => n.id);
+
+          // Rimuovi nodi selezionati
+          setNodes(nds => nds.filter(node => !node.selected));
+
+          // Rimuovi anche gli edge collegati ai nodi eliminati
+          setEdges(eds => eds.filter(edge =>
+            !selectedIds.includes(edge.source) && !selectedIds.includes(edge.target)
+          ));
+        }
+
+        // Trova edge selezionati
+        const selectedEdges = edges.filter(edge => edge.selected);
+        if (selectedEdges.length > 0) {
+          setEdges(eds => eds.filter(edge => !edge.selected));
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [nodes, edges, setNodes, setEdges]);
+
   const blobToBase64 = (blob) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -264,31 +309,7 @@ function MindMapInner({ bookId }) {
 
   const loadMapData = (map) => {
     if (map && map.data) {
-      // Migra i nodi vecchi al nuovo formato textNode
-      const migratedNodes = (map.data.nodes || createInitialNodes(map.color)).map(node => {
-        // Salta i nodi immagine
-        if (node.type === 'imageNode') return node;
-
-        // Migra nodi 'input', 'default', o senza tipo a 'textNode'
-        const needsMigration = !node.type || node.type === 'input' || node.type === 'default';
-
-        if (needsMigration || node.type === 'textNode') {
-          // Sposta lo style da node.style a data.style se necessario
-          const style = node.data?.style || node.style;
-          return {
-            ...node,
-            type: 'textNode',
-            style: undefined, // Rimuovi node.style per evitare doppia cornice
-            data: {
-              ...node.data,
-              style: style
-            }
-          };
-        }
-        return node;
-      });
-
-      setNodes(migratedNodes);
+      setNodes(map.data.nodes || createInitialNodes(map.color));
       setEdges(map.data.edges || initialEdges);
     } else {
       setNodes(createInitialNodes(map?.color || '#3b82f6'));
@@ -492,13 +513,23 @@ function MindMapInner({ bookId }) {
     setEdges((eds) =>
       eds.map((edge) => {
         if (edge.id === edgeId) {
-          return {
+          const updatedEdge = {
             ...edge,
             style: {
               ...edge.style,
               ...styleUpdates
             }
           };
+
+          // Se viene cambiato il colore della linea, aggiorna anche il colore della freccia
+          if (styleUpdates.stroke) {
+            updatedEdge.markerEnd = {
+              type: MarkerType.ArrowClosed,
+              color: styleUpdates.stroke
+            };
+          }
+
+          return updatedEdge;
         }
         return edge;
       })

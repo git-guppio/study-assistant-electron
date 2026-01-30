@@ -2144,6 +2144,81 @@ canvas.pdf-page-canvas {
   cursor: pointer;
 }
 
+/* Formato testo nel menu contestuale */
+.mindmap-context-format-submenu {
+  padding: 8px;
+  min-width: 140px;
+}
+
+.mindmap-context-format-toggles {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mindmap-context-format-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+
+.mindmap-context-format-btn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.mindmap-context-format-btn.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.mindmap-context-format-label {
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.mindmap-context-format-size-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.mindmap-context-format-size-btn {
+  width: 28px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.mindmap-context-format-size-btn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.mindmap-context-format-size-btn.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
 /* ===== MINDMAP TEXT NODE ===== */
 .mindmap-text-node {
   position: relative;
@@ -2158,9 +2233,11 @@ canvas.pdf-page-canvas {
 }
 
 .mindmap-text-node-label {
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
   cursor: default;
   user-select: none;
+  text-align: center;
 }
 
 .mindmap-text-node-input {
@@ -2171,6 +2248,9 @@ canvas.pdf-page-canvas {
   outline: none;
   font-family: inherit;
   text-align: center;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
 }
 
 .mindmap-text-handle {

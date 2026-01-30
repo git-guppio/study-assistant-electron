@@ -24,6 +24,15 @@ const LINE_STYLES = [
   { value: 'dashdot', name: 'Tratto-punto', dashArray: '10,5,2,5' }
 ];
 
+// Dimensioni font per nodi
+const FONT_SIZES = [
+  { value: '10px', name: 'S', label: 'Piccolo' },
+  { value: '12px', name: 'M', label: 'Medio' },
+  { value: '14px', name: 'L', label: 'Grande' },
+  { value: '16px', name: 'XL', label: 'Molto grande' },
+  { value: '20px', name: 'XXL', label: 'Enorme' }
+];
+
 /**
  * Menu contestuale per nodi, frecce e sfondo della mappa mentale
  */
@@ -135,6 +144,21 @@ function MindMapContextMenu({
     return { color, lineStyle };
   };
 
+  // Estrai formattazione testo corrente
+  const getTextFormat = () => {
+    if (!currentStyle) return { bold: false, italic: false, fontSize: '12px' };
+
+    const fontWeight = currentStyle.fontWeight;
+    const fontStyle = currentStyle.fontStyle;
+    const fontSize = currentStyle.fontSize || '12px';
+
+    return {
+      bold: fontWeight === 'bold' || fontWeight >= 600,
+      italic: fontStyle === 'italic',
+      fontSize: fontSize
+    };
+  };
+
   // Converte hex in rgba
   const hexToRgba = (hex, opacity) => {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -194,8 +218,30 @@ function MindMapContextMenu({
     setActiveSubmenu(null);
   };
 
+  const handleTextFormatChange = (formatType, value) => {
+    if (!onUpdateNode || !targetId) return;
+
+    let styleUpdate = {};
+
+    if (formatType === 'bold') {
+      const currentFormat = getTextFormat();
+      styleUpdate.fontWeight = currentFormat.bold ? 'normal' : 'bold';
+    } else if (formatType === 'italic') {
+      const currentFormat = getTextFormat();
+      styleUpdate.fontStyle = currentFormat.italic ? 'normal' : 'italic';
+    } else if (formatType === 'fontSize') {
+      styleUpdate.fontSize = value;
+    }
+
+    onUpdateNode(targetId, styleUpdate);
+    if (formatType === 'fontSize') {
+      setActiveSubmenu(null);
+    }
+  };
+
   const nodeColors = type === 'node' ? getNodeColors() : null;
   const edgeStyle = type === 'edge' ? getEdgeStyle() : null;
+  const textFormat = type === 'node' && !isImageNode ? getTextFormat() : null;
 
   return (
     <div
@@ -315,6 +361,55 @@ function MindMapContextMenu({
                       title={c.name}
                     />
                   ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Formato testo */}
+          <div className="mindmap-context-menu-item">
+            <button
+              className="mindmap-context-menu-btn"
+              onClick={() => setActiveSubmenu(activeSubmenu === 'format' ? null : 'format')}
+            >
+              <span className="mindmap-context-menu-icon">𝐁</span>
+              <span>Formato testo</span>
+              <span className="mindmap-context-menu-arrow">▶</span>
+            </button>
+            {activeSubmenu === 'format' && (
+              <div className="mindmap-context-submenu mindmap-context-format-submenu">
+                {/* Grassetto e Corsivo */}
+                <div className="mindmap-context-format-toggles">
+                  <button
+                    className={`mindmap-context-format-btn ${textFormat?.bold ? 'active' : ''}`}
+                    onClick={() => handleTextFormatChange('bold')}
+                    title="Grassetto"
+                  >
+                    <strong>B</strong>
+                  </button>
+                  <button
+                    className={`mindmap-context-format-btn ${textFormat?.italic ? 'active' : ''}`}
+                    onClick={() => handleTextFormatChange('italic')}
+                    title="Corsivo"
+                  >
+                    <em>I</em>
+                  </button>
+                </div>
+                {/* Dimensione font */}
+                <div className="mindmap-context-format-sizes">
+                  <span className="mindmap-context-format-label">Dimensione:</span>
+                  <div className="mindmap-context-format-size-buttons">
+                    {FONT_SIZES.map((size) => (
+                      <button
+                        key={size.value}
+                        className={`mindmap-context-format-size-btn ${textFormat?.fontSize === size.value ? 'active' : ''}`}
+                        onClick={() => handleTextFormatChange('fontSize', size.value)}
+                        title={size.label}
+                      >
+                        {size.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

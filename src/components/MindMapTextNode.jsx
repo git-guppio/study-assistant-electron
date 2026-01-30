@@ -4,6 +4,7 @@ import { Handle, Position } from 'reactflow';
 /**
  * Nodo testo personalizzato per la mappa mentale
  * Supporta modifica inline con doppio click
+ * Supporta testo multilinea con Shift+Enter
  * Ha 4 punti di ancoraggio (top, bottom, left, right)
  *
  * Props (via data):
@@ -13,7 +14,7 @@ import { Handle, Position } from 'reactflow';
 function MindMapTextNode({ id, data, selected }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(data.label || '');
-  const inputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   // Sincronizza editValue con data.label quando cambia esternamente
   useEffect(() => {
@@ -22,13 +23,23 @@ function MindMapTextNode({ id, data, selected }) {
     }
   }, [data.label, isEditing]);
 
-  // Focus sull'input quando entra in modalità editing
+  // Focus sulla textarea quando entra in modalità editing
   useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.select();
+      // Auto-resize iniziale
+      adjustTextareaHeight();
     }
   }, [isEditing]);
+
+  // Auto-resize della textarea
+  const adjustTextareaHeight = useCallback(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+    }
+  }, []);
 
   const handleDoubleClick = useCallback((e) => {
     e.stopPropagation();
@@ -45,14 +56,23 @@ function MindMapTextNode({ id, data, selected }) {
   }, [id, editValue, data]);
 
   const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Enter senza Shift = salva
       e.preventDefault();
       handleBlur();
+    } else if (e.key === 'Enter' && e.shiftKey) {
+      // Shift+Enter = nuova riga (lascia il comportamento di default)
+      // L'auto-resize verrà gestito da onChange
     } else if (e.key === 'Escape') {
       setIsEditing(false);
       setEditValue(data.label || '');
     }
   }, [handleBlur, data.label]);
+
+  const handleChange = useCallback((e) => {
+    setEditValue(e.target.value);
+    adjustTextareaHeight();
+  }, [adjustTextareaHeight]);
 
   return (
     <div
@@ -86,21 +106,22 @@ function MindMapTextNode({ id, data, selected }) {
         className="mindmap-text-handle"
       />
 
-      {/* Contenuto: input o testo */}
+      {/* Contenuto: textarea o testo */}
       {isEditing ? (
-        <input
-          ref={inputRef}
-          type="text"
+        <textarea
+          ref={textareaRef}
           value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
+          onChange={handleChange}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
           className="mindmap-text-node-input nodrag"
           style={{
             color: data.style?.color || '#1f2937',
             fontSize: data.style?.fontSize || '12px',
-            fontWeight: data.style?.fontWeight || 'normal'
+            fontWeight: data.style?.fontWeight || 'normal',
+            fontStyle: data.style?.fontStyle || 'normal'
           }}
+          rows={1}
         />
       ) : (
         <div className="mindmap-text-node-label">
