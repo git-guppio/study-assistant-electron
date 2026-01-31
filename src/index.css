@@ -2147,13 +2147,28 @@ canvas.pdf-page-canvas {
 /* Formato testo nel menu contestuale */
 .mindmap-context-format-submenu {
   padding: 8px;
-  min-width: 140px;
+  min-width: 180px;
+}
+
+.mindmap-context-format-section {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.mindmap-context-format-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.mindmap-context-format-section .mindmap-context-colors {
+  margin-top: 6px;
 }
 
 .mindmap-context-format-toggles {
   display: flex;
   gap: 6px;
-  margin-bottom: 10px;
 }
 
 .mindmap-context-format-btn {
