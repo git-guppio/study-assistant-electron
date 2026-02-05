@@ -6,12 +6,26 @@ import KeywordsEditor from './components/KeywordsEditor';
 import BookmarksEditor from './components/BookmarksEditor';
 import MindMap from './components/MindMap';
 import SummaryEditor from './components/SummaryEditor';
+import WelcomeScreen from './components/WelcomeScreen';
+import FirstRunWizard from './components/FirstRunWizard';
+import SettingsDialog from './components/SettingsDialog';
 import { initDatabase, getDatabase } from './database/db';
+import { initLibrary, getLibrary } from './database/libraryDb';
 import { EditorProvider } from './contexts/EditorContext';
 import { collectAllUsedImageUrls, extractLocalImageUrls } from './utils/imageUtils';
 
+// View states
+const VIEW_LOADING = 'loading';
+const VIEW_FIRST_RUN = 'first_run';
+const VIEW_LIBRARY = 'library';
+const VIEW_DOCUMENT = 'document';
+
 function App() {
-  const [bookInfo, setBookInfo] = useState(null);
+  // View state
+  const [currentView, setCurrentView] = useState(VIEW_LOADING);
+
+  // Document state
+  const [currentDocument, setCurrentDocument] = useState(null);
   const [activeTab, setActiveTab] = useState('notes');
   const [pdfPath, setPdfPath] = useState(null);
   const [pdfDir, setPdfDir] = useState(null);
@@ -27,6 +41,9 @@ function App() {
   const [bookmarks, setBookmarks] = useState([]);
   const [currentPdfPage, setCurrentPdfPage] = useState(1);
 
+  // Settings dialog
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   // Refs per comunicazione tra componenti
   const notesEditorRef = useRef(null);
   const dictionaryEditorRef = useRef(null);
@@ -34,61 +51,131 @@ function App() {
   const bookmarksEditorRef = useRef(null);
   const pdfViewerRef = useRef(null);
 
-  // Carica informazioni libro all'avvio
+  // Inizializzazione all'avvio
   useEffect(() => {
-    async function loadBookInfo() {
+    async function initialize() {
       try {
-        const info = await window.electronAPI.getBookInfo();
-        setBookInfo(info);
-        setPdfPath(info.filePath);
+        // Verifica se esiste già un path configurato in config.json
+        const isConfigured = await window.electronAPI.configIsLibraryConfigured();
 
-        // Inizializza database
-        if (info.filePath && info.bookId) {
-          const dir = await window.electronAPI.getPdfDirectory(info.filePath);
-          if (dir) {
-            setPdfDir(dir);
-            await initDatabase(dir, info.bookId);
+        if (isConfigured) {
+          // Ottieni il path dalla configurazione
+          const savedPath = await window.electronAPI.configGetLibraryPath();
+          console.log('📚 Library path from config:', savedPath);
 
-            // Carica mappa immagini esistenti per il custom protocol
-            const imagesResult = await window.electronAPI.loadImagesMap(dir, info.bookId);
-            console.log('🖼️ Images map loaded:', imagesResult);
-
-            setDbReady(true);
-
-            // Cleanup immagini orfane dopo che il database è pronto
-            setTimeout(async () => {
-              try {
-                const db = getDatabase();
-                if (db) {
-                  const usedUrls = await collectAllUsedImageUrls(db);
-                  const cleanupResult = await window.electronAPI.cleanupOrphanImages(dir, info.bookId, usedUrls);
-                  if (cleanupResult.deleted > 0) {
-                    console.log(`🧹 Cleaned up ${cleanupResult.deleted} orphan images`);
-                  }
-                }
-              } catch (error) {
-                console.error('Error during orphan cleanup:', error);
-              }
-            }, 1000);
-          }
+          // Inizializza la libreria con il path salvato
+          await initLibrary(savedPath);
+          setCurrentView(VIEW_LIBRARY);
         } else {
-          // Fallback: usa la directory userData per il database
-          const appDataPath = await window.electronAPI.getAppDataPath();
-          const fallbackBookId = info.bookId || 'default';
-          await initDatabase(appDataPath, fallbackBookId);
-          setDbReady(true);
+          // Prima esecuzione: mostra wizard
+          setCurrentView(VIEW_FIRST_RUN);
         }
-
-        console.log('📚 Book loaded:', info);
       } catch (error) {
-        console.error('Error loading book info:', error);
+        console.error('Error during initialization:', error);
+        setCurrentView(VIEW_FIRST_RUN);
       }
     }
 
-    loadBookInfo();
+    initialize();
   }, []);
 
-  // Carica annotazioni, defaults e colori custom quando il database e' pronto
+  // Completamento wizard prima esecuzione
+  const handleWizardComplete = async (libraryPath) => {
+    try {
+      // Salva il path nella configurazione
+      await window.electronAPI.configSetLibraryPath(libraryPath);
+      console.log('📚 Library path saved to config:', libraryPath);
+
+      // Inizializza la libreria
+      await initLibrary(libraryPath);
+      setCurrentView(VIEW_LIBRARY);
+    } catch (error) {
+      console.error('Error completing wizard:', error);
+    }
+  };
+
+  // Callback per quando il path della libreria viene cambiato dalle impostazioni
+  const handleLibraryPathChanged = async (newPath) => {
+    try {
+      // Reinizializza la libreria con il nuovo path
+      await initLibrary(newPath);
+      // Forza refresh della view
+      setCurrentView(VIEW_LOADING);
+      setTimeout(() => setCurrentView(VIEW_LIBRARY), 100);
+    } catch (error) {
+      console.error('Error reinitializing library:', error);
+    }
+  };
+
+  // Apertura documento dalla libreria
+  const handleOpenDocument = async (document) => {
+    setCurrentDocument(document);
+    setPdfPath(document.file_path);
+
+    // Ottieni il percorso del database per questo documento
+    const library = getLibrary();
+    const documentDbPath = await library.getDocumentDatabasePath(document.id);
+
+    if (documentDbPath) {
+      // Estrai la directory dal percorso del database (usa lastIndexOf per evitare require path)
+      const lastSlash = Math.max(documentDbPath.lastIndexOf('/'), documentDbPath.lastIndexOf('\\'));
+      const dbDir = documentDbPath.substring(0, lastSlash);
+
+      setPdfDir(dbDir);
+
+      // Inizializza il database del documento
+      await initDatabase(dbDir, document.id);
+
+      // Carica mappa immagini dalla cartella della libreria (non dalla cartella del PDF)
+      try {
+        await window.electronAPI.loadImagesMap(dbDir, document.id);
+      } catch (e) {
+        console.log('No images map to load');
+      }
+
+      setDbReady(true);
+      setCurrentView(VIEW_DOCUMENT);
+
+      console.log('📚 Document opened:', document.title);
+    }
+  };
+
+  // Ritorno alla libreria
+  const handleBackToLibrary = async () => {
+    // Prima di chiudere, aggiorna le statistiche del documento nella libreria
+    if (currentDocument?.id) {
+      try {
+        const stats = await window.electronAPI.getDocumentStatistics();
+        await window.electronAPI.libraryUpdateDocumentStatistics(currentDocument.id, stats);
+        console.log('📊 Statistics updated for document:', currentDocument.id, stats);
+      } catch (error) {
+        console.error('Error updating statistics:', error);
+      }
+    }
+
+    // Chiudi il database del documento corrente
+    const db = getDatabase();
+    if (db) {
+      await db.close();
+    }
+
+    // Reset state
+    setCurrentDocument(null);
+    setPdfPath(null);
+    setPdfDir(null);
+    setAnnotations([]);
+    setDbReady(false);
+    setDocumentDefaults({});
+    setCustomIconColors({});
+    setCustomActionColors({});
+    setBookmarks([]);
+    setCurrentPdfPage(1);
+    setActiveTab('notes');
+
+    setCurrentView(VIEW_LIBRARY);
+  };
+
+  // Carica annotazioni, defaults e colori custom quando il database è pronto
   useEffect(() => {
     async function loadData() {
       const db = getDatabase();
@@ -216,7 +303,7 @@ function App() {
           id: newNote.id,
           annotationId: newAnnotation.id,
           pageNumber: annotationData.pageNumber,
-          positionY: annotationData.rects[0]?.y || 0,  // Per ordinamento
+          positionY: annotationData.rects[0]?.y || 0,
           selectionText: annotationData.text,
           color: annotationData.color,
           gutterIconId: annotationData.gutterIconId,
@@ -239,14 +326,12 @@ function App() {
     if (!db) return;
 
     try {
-      // 1. Crea la flashcard nel database
       const newFlashcard = await db.saveFlashcard({
         front: annotationData.text,
-        back: '', // L'utente compilera' dopo
+        back: '',
         pageNumber: annotationData.pageNumber
       });
 
-      // 2. Crea l'annotazione con riferimento alla flashcard
       const newAnnotation = await db.saveAnnotation({
         type: 'flashcard',
         pageNumber: annotationData.pageNumber,
@@ -255,14 +340,10 @@ function App() {
         opacity: annotationData.opacity,
         rects: annotationData.rects,
         gutterIconId: 'flashcard',
-        noteId: null // Flashcard non ha nota collegata, ha flashcardId
+        noteId: null
       });
 
       setAnnotations(prev => [...prev, newAnnotation]);
-
-      // 3. Switch alla tab flashcards (quando sara' implementata)
-      // setActiveTab('flashcards');
-
       console.log('🧠 Flashcard created:', newFlashcard.id, newAnnotation.id);
     } catch (error) {
       console.error('Error creating flashcard:', error);
@@ -275,14 +356,12 @@ function App() {
     if (!db) return;
 
     try {
-      // 1. Crea la voce dizionario
       const newEntry = await db.saveDictionaryEntry({
         term: annotationData.text,
-        definition: '', // L'utente compilera' dopo
+        definition: '',
         pageNumber: annotationData.pageNumber
       });
 
-      // 2. Crea l'annotazione
       const newAnnotation = await db.saveAnnotation({
         type: 'dictionary',
         pageNumber: annotationData.pageNumber,
@@ -296,7 +375,6 @@ function App() {
 
       setAnnotations(prev => [...prev, newAnnotation]);
 
-      // 3. Inserisci il blocco nel DictionaryEditor
       if (dictionaryEditorRef.current?.insertDictionaryBlock) {
         dictionaryEditorRef.current.insertDictionaryBlock({
           id: newEntry.id,
@@ -309,9 +387,7 @@ function App() {
         });
       }
 
-      // 4. Switch alla tab dizionario
       setActiveTab('dictionary');
-
       console.log('📖 Dictionary entry created:', newEntry.id, newAnnotation.id);
     } catch (error) {
       console.error('Error creating dictionary entry:', error);
@@ -324,13 +400,11 @@ function App() {
     if (!db) return;
 
     try {
-      // 1. Crea la keyword
       const newKeyword = await db.saveKeyword({
         term: annotationData.text,
         pageNumber: annotationData.pageNumber
       });
 
-      // 2. Crea l'annotazione
       const newAnnotation = await db.saveAnnotation({
         type: 'keyword',
         pageNumber: annotationData.pageNumber,
@@ -344,7 +418,6 @@ function App() {
 
       setAnnotations(prev => [...prev, newAnnotation]);
 
-      // 3. Inserisci il blocco nel KeywordsEditor
       if (keywordsEditorRef.current?.insertKeywordBlock) {
         keywordsEditorRef.current.insertKeywordBlock({
           id: newKeyword.id,
@@ -357,48 +430,35 @@ function App() {
         });
       }
 
-      // 4. Switch alla tab keywords
       setActiveTab('keywords');
-
       console.log('🔑 Keyword created:', newKeyword.id, newAnnotation.id);
     } catch (error) {
       console.error('Error creating keyword:', error);
     }
   };
 
-  // Elimina un'annotazione dal PDF (click destro sul PDF)
+  // Elimina un'annotazione dal PDF
   const handleDeleteAnnotation = async (annotationId) => {
     const db = getDatabase();
     if (!db) return;
 
     try {
-      // Trova l'annotazione per determinare il tipo
       const annotation = annotations.find(a => a.id === annotationId);
-      console.log('🗑️ Deleting annotation:', annotationId, annotation);
 
       if (annotation?.type === 'note' && annotation.noteId) {
-        console.log('📝 This is a note annotation, removing TipTap block:', annotation.noteId);
-        // Se è una nota, rimuovi anche il blocco TipTap
         if (notesEditorRef.current?.removePdfNoteBlock) {
           notesEditorRef.current.removePdfNoteBlock(annotation.noteId);
-          console.log('✅ TipTap block removal called');
-        } else {
-          console.warn('⚠️ notesEditorRef.current.removePdfNoteBlock not available');
         }
-      } else {
-        console.log('ℹ️ Not a note annotation or no noteId:', { type: annotation?.type, noteId: annotation?.noteId });
       }
 
-      // Elimina dal DB
       await db.deleteAnnotation(annotationId);
       setAnnotations(prev => prev.filter(a => a.id !== annotationId));
-      console.log('✅ Annotation deleted from DB and state:', annotationId);
     } catch (error) {
-      console.error('❌ Error deleting annotation:', error);
+      console.error('Error deleting annotation:', error);
     }
   };
 
-  // Click su gutter icon -> scrolla alla voce corrispondente
+  // Click su gutter icon
   const handleGutterClick = (annotation) => {
     if (annotation.type === 'note' && annotation.noteId) {
       setActiveTab('notes');
@@ -424,45 +484,36 @@ function App() {
     }
   };
 
-  // Elimina nota da TipTap -> elimina anche annotation dal PDF e immagini
+  // Elimina nota da TipTap
   const handleDeleteNote = async (noteId, annotationId, noteContent) => {
     const db = getDatabase();
     if (!db) return;
 
     try {
-      // Elimina le immagini contenute nella nota
       if (noteContent && window.electronAPI) {
         const imageUrls = extractLocalImageUrls(noteContent);
         if (imageUrls.length > 0) {
           await window.electronAPI.deleteImagesFromDisk(imageUrls);
-          console.log('🗑️ Deleted', imageUrls.length, 'images from note');
         }
       }
 
-      // Elimina dal DB (CASCADE elimina anche l'annotazione)
       await db.deleteNote(noteId);
-
-      // Rimuovi annotation dallo state
       setAnnotations(prev => prev.filter(a => a.id !== annotationId));
-
-      console.log('🗑️ Note and annotation deleted:', noteId, annotationId);
     } catch (error) {
       console.error('Error deleting note:', error);
     }
   };
 
-  // Elimina voce dizionario da TipTap -> elimina anche annotation dal PDF e immagini
+  // Elimina voce dizionario
   const handleDeleteDictionaryEntry = async (entryId, annotationId, definitionContent) => {
     const db = getDatabase();
     if (!db) return;
 
     try {
-      // Elimina le immagini contenute nella definizione
       if (definitionContent && window.electronAPI) {
         const imageUrls = extractLocalImageUrls(definitionContent);
         if (imageUrls.length > 0) {
           await window.electronAPI.deleteImagesFromDisk(imageUrls);
-          console.log('🗑️ Deleted', imageUrls.length, 'images from dictionary entry');
         }
       }
 
@@ -471,25 +522,21 @@ function App() {
         await db.deleteAnnotation(annotationId);
         setAnnotations(prev => prev.filter(a => a.id !== annotationId));
       }
-
-      console.log('🗑️ Dictionary entry and annotation deleted:', entryId, annotationId);
     } catch (error) {
       console.error('Error deleting dictionary entry:', error);
     }
   };
 
-  // Elimina keyword da TipTap -> elimina anche annotation dal PDF e immagini
+  // Elimina keyword
   const handleDeleteKeyword = async (keywordId, annotationId, commentContent) => {
     const db = getDatabase();
     if (!db) return;
 
     try {
-      // Elimina le immagini contenute nel commento
       if (commentContent && window.electronAPI) {
         const imageUrls = extractLocalImageUrls(commentContent);
         if (imageUrls.length > 0) {
           await window.electronAPI.deleteImagesFromDisk(imageUrls);
-          console.log('🗑️ Deleted', imageUrls.length, 'images from keyword');
         }
       }
 
@@ -498,39 +545,29 @@ function App() {
         await db.deleteAnnotation(annotationId);
         setAnnotations(prev => prev.filter(a => a.id !== annotationId));
       }
-
-      console.log('🗑️ Keyword and annotation deleted:', keywordId, annotationId);
     } catch (error) {
       console.error('Error deleting keyword:', error);
     }
   };
 
-  // Handler per aggiungere/modificare segnalibro (chiamato dal PDFViewer)
+  // Handler per segnalibri
   const handleAddBookmark = (pageNumber, existingBookmark) => {
-    // Apri il dialog tramite BookmarksEditor
     if (bookmarksEditorRef.current?.openDialog) {
       bookmarksEditorRef.current.openDialog(pageNumber, existingBookmark);
       setActiveTab('bookmarks');
     }
   };
 
-  // Callback chiamato quando la pagina del PDF cambia
   const handlePdfPageChange = (pageNumber) => {
     setCurrentPdfPage(pageNumber);
   };
 
-  // Calcola il segnalibro per la pagina corrente
   const currentPageBookmark = bookmarks.find(b => b.pageNumber === currentPdfPage) || null;
 
-  // Naviga al PDF da blocco nota TipTap
+  // Naviga al PDF da blocco nota
   const handleNavigateToPdf = ({ annotationId, pageNumber }) => {
-    console.log('📄 Navigate to PDF:', { annotationId, pageNumber });
-
     if (pdfViewerRef.current) {
-      // 1. Vai alla pagina corretta
       pdfViewerRef.current.goToPage(pageNumber);
-
-      // 2. Flash l'annotazione (con piccolo delay per dare tempo al rendering della pagina)
       setTimeout(() => {
         pdfViewerRef.current?.flashOutline(annotationId);
       }, 100);
@@ -543,7 +580,7 @@ function App() {
         return (
           <BookmarksEditor
             ref={bookmarksEditorRef}
-            bookId={bookInfo?.bookId}
+            bookId={currentDocument?.id}
             dbReady={dbReady}
             onNavigateToPdf={handleNavigateToPdf}
             currentPage={currentPdfPage}
@@ -555,7 +592,7 @@ function App() {
           <EditorProvider>
             <NotesEditor
               ref={notesEditorRef}
-              bookId={bookInfo?.bookId}
+              bookId={currentDocument?.id}
               pdfDir={pdfDir}
               dbReady={dbReady}
               onDeleteNote={handleDeleteNote}
@@ -568,7 +605,7 @@ function App() {
           <EditorProvider>
             <DictionaryEditor
               ref={dictionaryEditorRef}
-              bookId={bookInfo?.bookId}
+              bookId={currentDocument?.id}
               pdfDir={pdfDir}
               dbReady={dbReady}
               onDeleteEntry={handleDeleteDictionaryEntry}
@@ -581,7 +618,7 @@ function App() {
           <EditorProvider>
             <KeywordsEditor
               ref={keywordsEditorRef}
-              bookId={bookInfo?.bookId}
+              bookId={currentDocument?.id}
               pdfDir={pdfDir}
               dbReady={dbReady}
               onDeleteKeyword={handleDeleteKeyword}
@@ -590,35 +627,69 @@ function App() {
           </EditorProvider>
         );
       case 'mindmap':
-        return (
-          <MindMap
-            bookId={bookInfo?.bookId}
-          />
-        );
+        return <MindMap bookId={currentDocument?.id} />;
       case 'summary':
-        return (
-          <SummaryEditor
-            bookId={bookInfo?.bookId}
-          />
-        );
+        return <SummaryEditor bookId={currentDocument?.id} />;
       default:
         return null;
     }
   };
 
+  // Render based on current view
+  if (currentView === VIEW_LOADING) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-100">
+        <div className="text-center">
+          <span className="text-4xl">📚</span>
+          <p className="mt-4 text-gray-600">Caricamento...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentView === VIEW_FIRST_RUN) {
+    return <FirstRunWizard onComplete={handleWizardComplete} />;
+  }
+
+  if (currentView === VIEW_LIBRARY) {
+    return (
+      <>
+        <WelcomeScreen
+          onOpenDocument={handleOpenDocument}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+        <SettingsDialog
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onLibraryPathChanged={handleLibraryPathChanged}
+        />
+      </>
+    );
+  }
+
+  // VIEW_DOCUMENT
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* Header / Menu Bar */}
       <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-4">
+          <button
+            onClick={handleBackToLibrary}
+            className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+            title="Torna alla libreria"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </button>
           <h1 className="text-lg font-semibold text-gray-800">
             📚 Study Assistant
           </h1>
-          {bookInfo && (
+          {currentDocument && (
             <div className="text-sm text-gray-600">
-              <span className="font-medium">{bookInfo.title}</span>
-              {bookInfo.authors && (
-                <span className="ml-2">• {bookInfo.authors}</span>
+              <span className="font-medium">{currentDocument.title}</span>
+              {currentDocument.authors && currentDocument.authors.length > 0 && (
+                <span className="ml-2">• {currentDocument.authors.join(', ')}</span>
               )}
             </div>
           )}
@@ -759,8 +830,8 @@ function App() {
       {/* Status Bar */}
       <footer className="bg-white border-t border-gray-200 px-4 py-1 text-xs text-gray-600 flex items-center justify-between">
         <div>
-          {bookInfo?.filePath && (
-            <span>📁 {bookInfo.filePath}</span>
+          {pdfPath && (
+            <span>📁 {pdfPath}</span>
           )}
         </div>
         <div>

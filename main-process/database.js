@@ -995,6 +995,45 @@ function deleteBookmark(id) {
   return result.changes > 0;
 }
 
+// ==================== STATISTICS ====================
+
+/**
+ * Conta tutte le entità nel database del documento
+ * Usato per mostrare statistiche nella libreria
+ * @returns {Object} Conteggio di tutte le entità
+ */
+function getDocumentStatistics() {
+  if (!db) {
+    return {
+      notes: 0,
+      dictionary: 0,
+      keywords: 0,
+      mindmaps: 0,
+      bookmarks: 0,
+      flashcards: 0,
+      annotations: 0
+    };
+  }
+
+  const notesCount = queryOne('SELECT COUNT(*) as count FROM notes');
+  const dictionaryCount = queryOne('SELECT COUNT(*) as count FROM dictionary_entries');
+  const keywordsCount = queryOne('SELECT COUNT(*) as count FROM keywords');
+  const mindmapsCount = queryOne('SELECT COUNT(*) as count FROM mindmaps');
+  const bookmarksCount = queryOne('SELECT COUNT(*) as count FROM bookmarks');
+  const flashcardsCount = queryOne('SELECT COUNT(*) as count FROM flashcards');
+  const annotationsCount = queryOne('SELECT COUNT(*) as count FROM annotations');
+
+  return {
+    notes: notesCount?.count || 0,
+    dictionary: dictionaryCount?.count || 0,
+    keywords: keywordsCount?.count || 0,
+    mindmaps: mindmapsCount?.count || 0,
+    bookmarks: bookmarksCount?.count || 0,
+    flashcards: flashcardsCount?.count || 0,
+    annotations: annotationsCount?.count || 0
+  };
+}
+
 // ==================== EXPORT ====================
 
 module.exports = {
@@ -1064,5 +1103,7 @@ module.exports = {
   getBookmarkByPage,
   saveBookmark,
   updateBookmark,
-  deleteBookmark
+  deleteBookmark,
+  // Statistics
+  getDocumentStatistics
 };

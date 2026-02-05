@@ -14,6 +14,33 @@ function getDatabase() {
   return database;
 }
 
+// Lazy load del modulo libreria
+let libraryDatabase = null;
+function getLibraryDatabase() {
+  if (!libraryDatabase) {
+    libraryDatabase = require('./libraryDatabase');
+  }
+  return libraryDatabase;
+}
+
+// Lazy load del modulo metadati PDF
+let pdfMetadata = null;
+function getPdfMetadata() {
+  if (!pdfMetadata) {
+    pdfMetadata = require('./pdfMetadata');
+  }
+  return pdfMetadata;
+}
+
+// Lazy load del modulo configurazione app
+let appConfig = null;
+function getAppConfig() {
+  if (!appConfig) {
+    appConfig = require('./appConfig');
+  }
+  return appConfig;
+}
+
 // Argomenti da CLI (passati dal plugin Calibre)
 let bookInfo = {
   bookId: null,
@@ -731,7 +758,170 @@ ipcMain.handle('db-delete-bookmark', (event, id) => {
   return getDatabase().deleteBookmark(id);
 });
 
+// ==================== LIBRARY DATABASE IPC HANDLERS ====================
+
+// Verifica se esiste una libreria
+ipcMain.handle('library-exists', async (event, customPath) => {
+  const libDb = getLibraryDatabase();
+  const libraryPath = libDb.getLibraryPath(customPath);
+  return libDb.libraryExists(libraryPath);
+});
+
+// Inizializza la libreria
+ipcMain.handle('library-init', async (event, customPath) => {
+  return await getLibraryDatabase().initLibraryDatabase(customPath);
+});
+
+// Ottieni percorso libreria
+ipcMain.handle('library-get-path', () => {
+  return getLibraryDatabase().getCurrentLibraryPath();
+});
+
+// Ottieni percorso database documento
+ipcMain.handle('library-get-document-db-path', (event, documentId) => {
+  return getLibraryDatabase().getDocumentDatabasePath(documentId);
+});
+
+// --- Documents ---
+ipcMain.handle('library-get-all-documents', () => {
+  return getLibraryDatabase().getAllDocuments();
+});
+
+ipcMain.handle('library-get-documents', (event, filters) => {
+  return getLibraryDatabase().getDocuments(filters);
+});
+
+ipcMain.handle('library-get-recent-documents', (event, limit) => {
+  return getLibraryDatabase().getRecentDocuments(limit);
+});
+
+ipcMain.handle('library-get-document-by-id', (event, id) => {
+  return getLibraryDatabase().getDocumentById(id);
+});
+
+ipcMain.handle('library-create-document', (event, docData) => {
+  return getLibraryDatabase().createDocument(docData);
+});
+
+ipcMain.handle('library-update-document', (event, { id, updates }) => {
+  return getLibraryDatabase().updateDocument(id, updates);
+});
+
+ipcMain.handle('library-update-document-last-opened', (event, id) => {
+  return getLibraryDatabase().updateDocumentLastOpened(id);
+});
+
+ipcMain.handle('library-toggle-document-favorite', (event, id) => {
+  return getLibraryDatabase().toggleDocumentFavorite(id);
+});
+
+ipcMain.handle('library-delete-document', (event, id) => {
+  return getLibraryDatabase().deleteDocument(id);
+});
+
+ipcMain.handle('library-check-document-file-exists', (event, id) => {
+  return getLibraryDatabase().checkDocumentFileExists(id);
+});
+
+// --- Categories ---
+ipcMain.handle('library-get-all-categories', () => {
+  return getLibraryDatabase().getAllCategories();
+});
+
+ipcMain.handle('library-get-category-by-id', (event, id) => {
+  return getLibraryDatabase().getCategoryById(id);
+});
+
+ipcMain.handle('library-create-category', (event, { name, color }) => {
+  return getLibraryDatabase().createCategory(name, color);
+});
+
+ipcMain.handle('library-update-category', (event, { id, updates }) => {
+  return getLibraryDatabase().updateCategory(id, updates);
+});
+
+ipcMain.handle('library-delete-category', (event, id) => {
+  return getLibraryDatabase().deleteCategory(id);
+});
+
+ipcMain.handle('library-count-documents-by-category', (event, categoryId) => {
+  return getLibraryDatabase().countDocumentsByCategory(categoryId);
+});
+
+// --- Settings ---
+ipcMain.handle('library-get-setting', (event, key) => {
+  return getLibraryDatabase().getSetting(key);
+});
+
+ipcMain.handle('library-set-setting', (event, { key, value }) => {
+  return getLibraryDatabase().setSetting(key, value);
+});
+
+ipcMain.handle('library-get-all-settings', () => {
+  return getLibraryDatabase().getAllSettings();
+});
+
+// --- Document Statistics ---
+ipcMain.handle('get-document-statistics', () => {
+  return getDatabase().getDocumentStatistics();
+});
+
+ipcMain.handle('library-update-document-statistics', (event, { id, stats }) => {
+  return getLibraryDatabase().updateDocumentStatistics(id, stats);
+});
+
+// --- PDF Metadata ---
+ipcMain.handle('extract-pdf-metadata', async (event, filePath) => {
+  return await getPdfMetadata().extractPdfMetadata(filePath);
+});
+
+ipcMain.handle('calculate-file-hash', async (event, filePath) => {
+  try {
+    const hash = await getPdfMetadata().calculateFileHash(filePath);
+    return { success: true, hash };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// --- App Configuration ---
+ipcMain.handle('config-get-library-path', () => {
+  return getAppConfig().getLibraryPath();
+});
+
+ipcMain.handle('config-set-library-path', (event, libraryPath) => {
+  return getAppConfig().setLibraryPath(libraryPath);
+});
+
+ipcMain.handle('config-is-library-configured', () => {
+  return getAppConfig().isLibraryConfigured();
+});
+
+ipcMain.handle('config-get-default-library-path', () => {
+  return getAppConfig().getDefaultLibraryPath();
+});
+
+ipcMain.handle('config-move-library', async (event, { oldPath, newPath }) => {
+  try {
+    // Chiudi il database della libreria corrente prima di spostare
+    getLibraryDatabase().closeLibraryDatabase();
+
+    const result = await getAppConfig().moveLibrary(oldPath, newPath);
+    return { success: true, newPath: result.newPath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('config-create-empty-library', (event, newPath) => {
+  // Chiudi il database della libreria corrente se aperto
+  getLibraryDatabase().closeLibraryDatabase();
+
+  return getAppConfig().createEmptyLibrary(newPath);
+});
+
 // Chiudi database quando l'app si chiude
 app.on('before-quit', () => {
   getDatabase().closeDatabase();
+  getLibraryDatabase().closeLibraryDatabase();
 });

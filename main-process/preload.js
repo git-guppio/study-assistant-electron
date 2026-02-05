@@ -103,6 +103,65 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbUpdateBookmark: (id, updates) => ipcRenderer.invoke('db-update-bookmark', { id, updates }),
   dbDeleteBookmark: (id) => ipcRenderer.invoke('db-delete-bookmark', id),
 
+  // ==================== LIBRARY API ====================
+
+  // Inizializzazione libreria
+  libraryExists: (customPath) => ipcRenderer.invoke('library-exists', customPath),
+  libraryInit: (customPath) => ipcRenderer.invoke('library-init', customPath),
+  libraryGetPath: () => ipcRenderer.invoke('library-get-path'),
+  libraryGetDocumentDatabasePath: (documentId) =>
+    ipcRenderer.invoke('library-get-document-db-path', documentId),
+
+  // Documents
+  libraryGetAllDocuments: () => ipcRenderer.invoke('library-get-all-documents'),
+  libraryGetDocuments: (filters) => ipcRenderer.invoke('library-get-documents', filters),
+  libraryGetRecentDocuments: (limit) => ipcRenderer.invoke('library-get-recent-documents', limit),
+  libraryGetDocumentById: (id) => ipcRenderer.invoke('library-get-document-by-id', id),
+  libraryCreateDocument: (docData) => ipcRenderer.invoke('library-create-document', docData),
+  libraryUpdateDocument: (id, updates) =>
+    ipcRenderer.invoke('library-update-document', { id, updates }),
+  libraryUpdateDocumentLastOpened: (id) =>
+    ipcRenderer.invoke('library-update-document-last-opened', id),
+  libraryToggleDocumentFavorite: (id) =>
+    ipcRenderer.invoke('library-toggle-document-favorite', id),
+  libraryDeleteDocument: (id) => ipcRenderer.invoke('library-delete-document', id),
+  libraryCheckDocumentFileExists: (id) =>
+    ipcRenderer.invoke('library-check-document-file-exists', id),
+
+  // Categories
+  libraryGetAllCategories: () => ipcRenderer.invoke('library-get-all-categories'),
+  libraryGetCategoryById: (id) => ipcRenderer.invoke('library-get-category-by-id', id),
+  libraryCreateCategory: (name, color) =>
+    ipcRenderer.invoke('library-create-category', { name, color }),
+  libraryUpdateCategory: (id, updates) =>
+    ipcRenderer.invoke('library-update-category', { id, updates }),
+  libraryDeleteCategory: (id) => ipcRenderer.invoke('library-delete-category', id),
+  libraryCountDocumentsByCategory: (categoryId) =>
+    ipcRenderer.invoke('library-count-documents-by-category', categoryId),
+
+  // Settings
+  libraryGetSetting: (key) => ipcRenderer.invoke('library-get-setting', key),
+  librarySetSetting: (key, value) => ipcRenderer.invoke('library-set-setting', { key, value }),
+  libraryGetAllSettings: () => ipcRenderer.invoke('library-get-all-settings'),
+
+  // PDF Metadata
+  extractPdfMetadata: (filePath) => ipcRenderer.invoke('extract-pdf-metadata', filePath),
+  calculateFileHash: (filePath) => ipcRenderer.invoke('calculate-file-hash', filePath),
+
+  // Document Statistics
+  getDocumentStatistics: () => ipcRenderer.invoke('get-document-statistics'),
+  libraryUpdateDocumentStatistics: (id, stats) =>
+    ipcRenderer.invoke('library-update-document-statistics', { id, stats }),
+
+  // App Configuration
+  configGetLibraryPath: () => ipcRenderer.invoke('config-get-library-path'),
+  configSetLibraryPath: (libraryPath) => ipcRenderer.invoke('config-set-library-path', libraryPath),
+  configIsLibraryConfigured: () => ipcRenderer.invoke('config-is-library-configured'),
+  configGetDefaultLibraryPath: () => ipcRenderer.invoke('config-get-default-library-path'),
+  configMoveLibrary: (oldPath, newPath) =>
+    ipcRenderer.invoke('config-move-library', { oldPath, newPath }),
+  configCreateEmptyLibrary: (newPath) => ipcRenderer.invoke('config-create-empty-library', newPath),
+
   // ==================== IMAGE API ====================
   loadImagesMap: (pdfDir, bookId) =>
     ipcRenderer.invoke('load-images-map', { pdfDir, bookId }),
