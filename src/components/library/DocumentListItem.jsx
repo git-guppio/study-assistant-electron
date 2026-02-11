@@ -1,10 +1,12 @@
 import React from 'react';
 
 function DocumentListItem({ document, onClick, onContextMenu, onToggleFavorite }) {
-  // Formatta l'UUID (mostra solo i primi 8 caratteri)
+  // Formatta l'UUID in forma abbreviata: 8-4-4 (es. 550e8400-e29b-41d4)
   const formatUuid = (uuid) => {
     if (!uuid) return '';
-    return uuid.substring(0, 8);
+    const parts = uuid.split('-');
+    if (parts.length < 3) return uuid.substring(0, 8);
+    return `${parts[0]}-${parts[1]}-${parts[2]}`;
   };
 
   // Formatta la data

@@ -309,7 +309,22 @@ function MindMapInner({ bookId }) {
 
   const loadMapData = (map) => {
     if (map && map.data) {
-      setNodes(map.data.nodes || createInitialNodes(map.color));
+      const rawNodes = map.data.nodes || createInitialNodes(map.color);
+      // Migra nodi salvati con tipo mancante/default a textNode
+      const migratedNodes = rawNodes.map(node => {
+        if (!node.type || (node.type !== 'textNode' && node.type !== 'imageNode')) {
+          // Sposta node.style in data.style se necessario
+          const dataStyle = node.data?.style || node.style || {};
+          return {
+            ...node,
+            type: 'textNode',
+            style: undefined,
+            data: { ...node.data, style: dataStyle }
+          };
+        }
+        return node;
+      });
+      setNodes(migratedNodes);
       setEdges(map.data.edges || initialEdges);
     } else {
       setNodes(createInitialNodes(map?.color || '#3b82f6'));

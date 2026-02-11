@@ -248,6 +248,11 @@ function App() {
       });
 
       setAnnotations(prev => [...prev, newAnnotation]);
+
+      // Salva il colore highlight come preferenza
+      await db.updateDocumentDefaults({ highlightColor: annotationData.color });
+      setDocumentDefaults(prev => ({ ...prev, highlightColor: annotationData.color }));
+
       console.log('🖍️ Highlight created:', newAnnotation.id);
     } catch (error) {
       console.error('Error creating highlight:', error);
@@ -291,9 +296,11 @@ function App() {
         annotationId: newAnnotation.id
       });
 
-      // 4. Salva l'ultima icona usata nei document defaults
+      // 4. Salva l'ultima icona usata e il colore associato come preferenze
       await db.updateDocumentDefaults({ lastNoteIconId: annotationData.gutterIconId });
       setDocumentDefaults(prev => ({ ...prev, lastNoteIconId: annotationData.gutterIconId }));
+      await db.upsertCustomIconColor(annotationData.gutterIconId, annotationData.color);
+      setCustomIconColors(prev => ({ ...prev, [annotationData.gutterIconId]: annotationData.color }));
 
       setAnnotations(prev => [...prev, newAnnotation]);
 
@@ -344,6 +351,11 @@ function App() {
       });
 
       setAnnotations(prev => [...prev, newAnnotation]);
+
+      // Salva il colore flashcard come preferenza
+      await db.upsertCustomActionColor('flashcard', annotationData.color);
+      setCustomActionColors(prev => ({ ...prev, flashcard: annotationData.color }));
+
       console.log('🧠 Flashcard created:', newFlashcard.id, newAnnotation.id);
     } catch (error) {
       console.error('Error creating flashcard:', error);
@@ -387,6 +399,10 @@ function App() {
         });
       }
 
+      // Salva il colore dictionary come preferenza
+      await db.upsertCustomActionColor('dictionary', annotationData.color);
+      setCustomActionColors(prev => ({ ...prev, dictionary: annotationData.color }));
+
       setActiveTab('dictionary');
       console.log('📖 Dictionary entry created:', newEntry.id, newAnnotation.id);
     } catch (error) {
@@ -429,6 +445,10 @@ function App() {
           comment: '',
         });
       }
+
+      // Salva il colore keyword come preferenza
+      await db.upsertCustomActionColor('keyword', annotationData.color);
+      setCustomActionColors(prev => ({ ...prev, keyword: annotationData.color }));
 
       setActiveTab('keywords');
       console.log('🔑 Keyword created:', newKeyword.id, newAnnotation.id);
