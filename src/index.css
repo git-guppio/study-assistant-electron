@@ -763,6 +763,77 @@ canvas.pdf-page-canvas {
   font-size: 13px;
 }
 
+/* ===== RESIZABLE IMAGE ===== */
+.resizable-image-wrapper {
+  display: inline-block;
+  line-height: 0;
+  margin: 8px 0;
+}
+
+/* Disabilita lo stile di selezione predefinito di ProseMirror sul wrapper NodeView */
+.resizable-image-wrapper.ProseMirror-selectednode {
+  outline: none !important;
+}
+
+/* Outline di selezione: controllata da JS (selected && editorFocused) */
+.resizable-image-wrapper.show-controls .resizable-image-container {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.resizable-image-wrapper.resizing {
+  user-select: none;
+}
+
+.resizable-image-container {
+  position: relative;
+  display: inline-block;
+  border-radius: 4px;
+  overflow: visible;
+}
+
+.resizable-image-container img {
+  border-radius: 4px;
+  display: block;
+}
+
+/* Maniglie di ridimensionamento */
+.resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.resize-handle-nw {
+  top: -5px;
+  left: -5px;
+  cursor: nw-resize;
+}
+
+.resize-handle-ne {
+  top: -5px;
+  right: -5px;
+  cursor: ne-resize;
+}
+
+.resize-handle-sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: sw-resize;
+}
+
+.resize-handle-se {
+  bottom: -5px;
+  right: -5px;
+  cursor: se-resize;
+}
+
 /* ===== PDF NOTE BLOCK - Comment wrapper espanso ===== */
 .pdf-note-block-comment-wrapper {
   position: relative;

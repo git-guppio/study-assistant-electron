@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 
 /**
  * EditorContext - Gestisce quale editor TipTap è attualmente attivo
@@ -29,8 +29,17 @@ export function EditorProvider({ children }) {
     }
   }, [activeEditor]);
 
+  // Ref per tracciare il MiniEditor precedente (evita stale closure)
+  const prevMiniEditorRef = useRef(null);
+
   // Quando un MiniEditor riceve focus
   const setMiniEditorActive = useCallback((editor, miniEditorId) => {
+    // Deseleziona contenuto nel MiniEditor precedente (rimuove selezione immagini)
+    const prev = prevMiniEditorRef.current;
+    if (prev && prev !== editor) {
+      try { prev.commands.blur(); } catch (e) { /* editor potrebbe essere distrutto */ }
+    }
+    prevMiniEditorRef.current = editor;
     setActiveEditor(editor);
     setActiveMiniEditorId(miniEditorId);
   }, []);

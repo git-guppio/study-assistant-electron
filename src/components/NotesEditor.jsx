@@ -52,6 +52,20 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
       attributes: {
         class: 'prose prose-sm max-w-none focus:outline-none min-h-[400px] p-4',
       },
+      // Impedisci inserimento testo nei gap tra i blocchi nota
+      handleTextInput: () => true,
+      handleKeyDown: (view, event) => {
+        // Permetti Delete/Backspace (gestiti dal plugin PdfNoteBlock per eliminazione note)
+        if (event.key === 'Delete' || event.key === 'Backspace') return false;
+        // Permetti navigazione
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+             'Home', 'End', 'PageUp', 'PageDown', 'Escape', 'Tab'].includes(event.key)) return false;
+        // Permetti Ctrl/Cmd + A, Z, Y, C (select all, undo, redo, copy)
+        if ((event.ctrlKey || event.metaKey) && ['a', 'z', 'y', 'c'].includes(event.key.toLowerCase())) return false;
+        // Blocca Enter e tutti i tasti che generano contenuto
+        if (event.key === 'Enter' || event.key.length === 1) return true;
+        return false;
+      },
     },
   }, [pdfDir, bookId]);
 
@@ -191,6 +205,12 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
         setTimeout(() => {
           noteElement.classList.remove('note-flash');
         }, 2000);
+
+        // Attiva la nota: focus sul MiniEditor per renderla la nota attiva
+        setTimeout(() => {
+          const miniEditorContent = noteElement.querySelector('.mini-editor-content');
+          if (miniEditorContent) miniEditorContent.focus();
+        }, 300);
       }
     }
   }), [editor]);
@@ -512,7 +532,7 @@ const NotesEditor = forwardRef(function NotesEditor({ bookId, pdfDir, dbReady, o
           {/* Blocchi occasionali */}
           <button onClick={() => activeEditor?.chain().focus().toggleBlockquote().run()}
             className={btnActive(activeEditor?.isActive('blockquote'))} title="Citazione">
-            " Cita
+            " "
           </button>
           <button onClick={() => activeEditor?.chain().focus().toggleCodeBlock().run()}
             className={`${btnActive(activeEditor?.isActive('codeBlock'))} font-mono`} title="Blocco codice">

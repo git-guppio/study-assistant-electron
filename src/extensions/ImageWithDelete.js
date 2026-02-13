@@ -1,6 +1,8 @@
 import Image from '@tiptap/extension-image';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { ReactNodeViewRenderer } from '@tiptap/react';
 import { showDeleteImageDialog } from '../utils/confirmDialog';
+import ResizableImageComponent from '../components/ResizableImageComponent';
 
 /**
  * Estensione Image custom con:
@@ -25,6 +27,30 @@ export const ImageWithDelete = Image.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: element => {
+          const img = element.tagName === 'IMG' ? element : element.querySelector('img');
+          const w = img?.getAttribute('width');
+          return w ? parseInt(w, 10) : null;
+        },
+        renderHTML: attributes => {
+          if (!attributes.width) return {};
+          return { width: attributes.width };
+        },
+      },
+      height: {
+        default: null,
+        parseHTML: element => {
+          const img = element.tagName === 'IMG' ? element : element.querySelector('img');
+          const h = img?.getAttribute('height');
+          return h ? parseInt(h, 10) : null;
+        },
+        renderHTML: attributes => {
+          if (!attributes.height) return {};
+          return { height: attributes.height };
+        },
+      },
       // Attributo per tracciare se l'immagine è mancante
       isMissing: {
         default: false,
@@ -37,6 +63,10 @@ export const ImageWithDelete = Image.extend({
         },
       },
     };
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageComponent);
   },
 
   addProseMirrorPlugins() {
