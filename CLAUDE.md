@@ -60,6 +60,15 @@ The SQLite database stores: `notes`, `annotations`, `highlights`, `mindmaps`, `s
 
 Annotations appear as gutter icons on the PDF's left margin. Types include highlights, notes, flashcards, dictionary entries, and keywords. Each annotation links to a specific page and optional text selection coordinates.
 
+
+## Start Application
+Use two terminal:
+Terminal 1
+- taskkill /f /im node.exe
+- npm run dev
+Terminal 2
+- npx electron . --book-id "1" --title "Test Book" --authors "Test Author" --file "C:\Test_PDF\The_Universal_Computer.pdf" --format "PDF"
+
 ## Tech Stack
 
 - **Electron 28** + **React 18** + **Vite 5**
