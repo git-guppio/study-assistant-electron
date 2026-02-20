@@ -7,6 +7,7 @@ import EditDocumentDialog from './library/EditDocumentDialog';
 import DeleteDocumentDialog from './library/DeleteDocumentDialog';
 import FileNotFoundDialog from './library/FileNotFoundDialog';
 import CategoryDialog from './library/CategoryDialog';
+import LibraryBackupDialog from './LibraryBackupDialog';
 import { getLibrary } from '../database/libraryDb';
 
 function WelcomeScreen({ onOpenDocument, onOpenSettings }) {
@@ -27,6 +28,7 @@ function WelcomeScreen({ onOpenDocument, onOpenSettings }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [fileNotFoundDialogOpen, setFileNotFoundDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [libraryBackupDialogOpen, setLibraryBackupDialogOpen] = useState(false);
 
   // State per documento selezionato (per edit/delete)
   const [selectedDocument, setSelectedDocument] = useState(null);
@@ -263,6 +265,13 @@ function WelcomeScreen({ onOpenDocument, onOpenSettings }) {
     }
   };
 
+  // Handler per ripristino backup libreria
+  const handleLibraryBackupRestoreSuccess = async () => {
+    // Dopo il ripristino della libreria, ricarica tutti i dati
+    console.log('📦 Library backup restored, reloading data...');
+    await loadData();
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* Header */}
@@ -281,6 +290,14 @@ function WelcomeScreen({ onOpenDocument, onOpenSettings }) {
           >
             <span>+</span>
             <span>Importa documento</span>
+          </button>
+
+          <button
+            onClick={() => setLibraryBackupDialogOpen(true)}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Backup Libreria"
+          >
+            <span className="text-xl">📦</span>
           </button>
 
           <button
@@ -412,6 +429,13 @@ function WelcomeScreen({ onOpenDocument, onOpenSettings }) {
         }}
         onSave={handleSaveCategory}
       />
+
+      {libraryBackupDialogOpen && (
+        <LibraryBackupDialog
+          onClose={() => setLibraryBackupDialogOpen(false)}
+          onRestoreSuccess={handleLibraryBackupRestoreSuccess}
+        />
+      )}
     </div>
   );
 }

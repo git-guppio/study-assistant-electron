@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, session, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -112,6 +112,25 @@ function createWindow() {
   });
 }
 
+// Dialog di conferma per link esterni
+function showExternalLinkDialog(url) {
+  const win = BrowserWindow.getFocusedWindow();
+  dialog.showMessageBox(win, {
+    type: 'warning',
+    title: 'Link esterno',
+    message: 'Questa azione aprirà un link esterno nel browser.',
+    detail: `URL: ${url}\n\nVuoi continuare?`,
+    buttons: ['Apri nel browser', 'Annulla'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true
+  }).then(({ response }) => {
+    if (response === 0) {
+      shell.openExternal(url);
+    }
+  });
+}
+
 // Registra custom protocol per servire immagini locali in modo sicuro
 // Deve essere chiamato PRIMA di app.whenReady()
 protocol.registerSchemesAsPrivileged([
@@ -183,7 +202,49 @@ app.whenReady().then(() => {
     }
   });
 
+  // ===== PROTEZIONE: Blocca richieste a risorse esterne =====
+  // I PDF possono contenere riferimenti a immagini/font da URL remoti
+  // che verrebbero usati come tracking pixel. Blocchiamo tutto tranne i protocolli locali.
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const url = details.url;
+    // Permetti protocolli locali e dev server
+    if (url.startsWith('file://') ||
+        url.startsWith('local-image://') ||
+        url.startsWith('http://localhost') ||
+        url.startsWith('devtools://') ||
+        url.startsWith('data:') ||
+        url.startsWith('blob:') ||
+        url.startsWith('chrome-extension://')) {
+      callback({ cancel: false });
+      return;
+    }
+    // Blocca tutte le richieste HTTP/HTTPS esterne
+    console.log('[Security] Blocked external request:', url);
+    callback({ cancel: true });
+  });
+
   createWindow();
+
+  // ===== PROTEZIONE: Sanitizzazione link e navigazione =====
+  // Intercetta tentativi di navigazione verso URL esterni e chiede conferma
+  if (mainWindow) {
+    // Blocca navigazione diretta (es. link nel PDF o redirect)
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+      // Permetti navigazione locale (dev server e file locali)
+      if (url.startsWith('http://localhost') || url.startsWith('file://')) return;
+
+      event.preventDefault();
+      showExternalLinkDialog(url);
+    });
+
+    // Blocca apertura di nuove finestre (target="_blank" etc.)
+    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (!url.startsWith('http://localhost') && !url.startsWith('file://')) {
+        showExternalLinkDialog(url);
+      }
+      return { action: 'deny' };
+    });
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -269,8 +330,18 @@ ipcMain.on('log', (event, message) => {
 // ==================== DATABASE IPC HANDLERS ====================
 
 // Inizializza database (async per sql.js)
-ipcMain.handle('db-init', async (event, { pdfDir, bookId }) => {
-  return await getDatabase().initDatabase(pdfDir, bookId);
+ipcMain.handle('db-init', async (event, { pdfDir, bookId, documentId }) => {
+  const result = await getDatabase().initDatabase(pdfDir, bookId);
+
+  // Crea backup automatico se documentId è fornito e DB inizializzato con successo
+  if (result.success && documentId && result.path) {
+    const backupResult = getBackupManager().createBackup(result.path, documentId);
+    if (backupResult.success) {
+      console.log(`📦 Auto-backup created for document ${documentId}`);
+    }
+  }
+
+  return result;
 });
 
 // Chiudi database
@@ -918,6 +989,57 @@ ipcMain.handle('config-create-empty-library', (event, newPath) => {
   getLibraryDatabase().closeLibraryDatabase();
 
   return getAppConfig().createEmptyLibrary(newPath);
+});
+
+// ===== BACKUP HANDLERS =====
+
+// Lazy load del modulo backup
+let backupManager = null;
+function getBackupManager() {
+  if (!backupManager) {
+    backupManager = require('./backupManager');
+  }
+  return backupManager;
+}
+
+ipcMain.handle('backup-create', (event, { dbPath, documentId }) => {
+  return getBackupManager().createBackup(dbPath, documentId);
+});
+
+ipcMain.handle('backup-list', (event, documentId) => {
+  return getBackupManager().listBackups(documentId);
+});
+
+ipcMain.handle('backup-restore', (event, { documentId, backupPath, targetDbPath }) => {
+  return getBackupManager().restoreBackup(documentId, backupPath, targetDbPath);
+});
+
+ipcMain.handle('backup-delete-all', (event, documentId) => {
+  return getBackupManager().deleteAllBackups(documentId);
+});
+
+// ===== LIBRARY BACKUP HANDLERS =====
+
+ipcMain.handle('library-backup-create', () => {
+  const libraryDb = getLibraryDatabase();
+  const libraryPath = libraryDb.getLibraryPath();
+  const dbPath = path.join(libraryPath, 'library.db');
+  return getBackupManager().createBackup(dbPath, 'library');
+});
+
+ipcMain.handle('library-backup-list', () => {
+  return getBackupManager().listBackups('library');
+});
+
+ipcMain.handle('library-backup-restore', (event, backupPath) => {
+  const libraryDb = getLibraryDatabase();
+  const libraryPath = libraryDb.getLibraryPath();
+  const targetDbPath = path.join(libraryPath, 'library.db');
+  return getBackupManager().restoreBackup('library', backupPath, targetDbPath);
+});
+
+ipcMain.handle('library-backup-delete-all', () => {
+  return getBackupManager().deleteAllBackups('library');
 });
 
 // Chiudi database quando l'app si chiude

@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==================== DATABASE API ====================
 
   // Inizializzazione
-  dbInit: (pdfDir, bookId) => ipcRenderer.invoke('db-init', { pdfDir, bookId }),
+  dbInit: (pdfDir, bookId, documentId) => ipcRenderer.invoke('db-init', { pdfDir, bookId, documentId }),
   dbClose: () => ipcRenderer.invoke('db-close'),
 
   // Note
@@ -173,5 +173,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteImagesFromDisk: (imageUrls) => ipcRenderer.invoke('delete-images-from-disk', imageUrls),
   checkImageExists: (imageUrl) => ipcRenderer.invoke('check-image-exists', imageUrl),
   cleanupOrphanImages: (pdfDir, bookId, usedImageUrls) =>
-    ipcRenderer.invoke('cleanup-orphan-images', { pdfDir, bookId, usedImageUrls })
+    ipcRenderer.invoke('cleanup-orphan-images', { pdfDir, bookId, usedImageUrls }),
+
+  // ==================== BACKUP API ====================
+  backupCreate: (dbPath, documentId) =>
+    ipcRenderer.invoke('backup-create', { dbPath, documentId }),
+  backupList: (documentId) => ipcRenderer.invoke('backup-list', documentId),
+  backupRestore: (documentId, backupPath, targetDbPath) =>
+    ipcRenderer.invoke('backup-restore', { documentId, backupPath, targetDbPath }),
+  backupDeleteAll: (documentId) => ipcRenderer.invoke('backup-delete-all', documentId),
+
+  // ==================== LIBRARY BACKUP API ====================
+  libraryBackupCreate: () => ipcRenderer.invoke('library-backup-create'),
+  libraryBackupList: () => ipcRenderer.invoke('library-backup-list'),
+  libraryBackupRestore: (backupPath) =>
+    ipcRenderer.invoke('library-backup-restore', backupPath),
+  libraryBackupDeleteAll: () => ipcRenderer.invoke('library-backup-delete-all')
 });

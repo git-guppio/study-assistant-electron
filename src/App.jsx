@@ -9,6 +9,7 @@ import SummaryEditor from './components/SummaryEditor';
 import WelcomeScreen from './components/WelcomeScreen';
 import FirstRunWizard from './components/FirstRunWizard';
 import SettingsDialog from './components/SettingsDialog';
+import BackupDialog from './components/BackupDialog';
 import { initDatabase, getDatabase } from './database/db';
 import { initLibrary, getLibrary } from './database/libraryDb';
 import { EditorProvider } from './contexts/EditorContext';
@@ -44,6 +45,10 @@ function App() {
   // Settings dialog
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Backup dialog
+  const [backupDialogOpen, setBackupDialogOpen] = useState(false);
+  const [currentDbPath, setCurrentDbPath] = useState(null);
+
   // Refs per comunicazione tra componenti
   const notesEditorRef = useRef(null);
   const dictionaryEditorRef = useRef(null);
@@ -65,6 +70,17 @@ function App() {
 
           // Inizializza la libreria con il path salvato
           await initLibrary(savedPath);
+
+          // Crea backup automatico della libreria all'avvio
+          try {
+            const backupResult = await window.electronAPI.libraryBackupCreate();
+            if (backupResult.success) {
+              console.log('📦 Auto-backup libreria creato:', backupResult.timestamp);
+            }
+          } catch (err) {
+            console.warn('Backup libreria non riuscito:', err);
+          }
+
           setCurrentView(VIEW_LIBRARY);
         } else {
           // Prima esecuzione: mostra wizard
@@ -123,8 +139,11 @@ function App() {
 
       setPdfDir(dbDir);
 
-      // Inizializza il database del documento
-      await initDatabase(dbDir, document.id);
+      // Inizializza il database del documento (con documentId per auto-backup)
+      await initDatabase(dbDir, document.id, document.id);
+
+      // Salva il percorso del DB per i backup
+      setCurrentDbPath(documentDbPath);
 
       // Carica mappa immagini dalla cartella della libreria (non dalla cartella del PDF)
       try {
@@ -137,6 +156,40 @@ function App() {
       setCurrentView(VIEW_DOCUMENT);
 
       console.log('📚 Document opened:', document.title);
+    }
+  };
+
+  // Ripristino backup riuscito - ricarica il database
+  const handleBackupRestoreSuccess = async () => {
+    console.log('🔄 Backup restored - reloading database...');
+
+    // Chiudi e riapri il database per caricare i dati ripristinati
+    const db = getDatabase();
+    if (db) {
+      await db.close();
+    }
+
+    // Reinizializza il database
+    if (currentDocument && pdfDir) {
+      await initDatabase(pdfDir, currentDocument.id, currentDocument.id);
+
+      // Ricarica annotations, defaults, bookmarks
+      const annotations = await db.getAnnotations();
+      setAnnotations(annotations);
+
+      const defaults = await db.getDocumentDefaults();
+      setDocumentDefaults(defaults);
+
+      const iconColors = await db.getAllCustomIconColors();
+      setCustomIconColors(iconColors);
+
+      const actionColors = await db.getAllCustomActionColors();
+      setCustomActionColors(actionColors);
+
+      const bookmarks = await db.getAllBookmarks();
+      setBookmarks(bookmarks);
+
+      console.log('✅ Database reloaded after backup restore');
     }
   };
 
@@ -731,6 +784,13 @@ function App() {
           >
             📤 Esporta
           </button>
+          <button
+            className="px-3 py-1 text-sm bg-amber-500 text-white rounded hover:bg-amber-600"
+            onClick={() => setBackupDialogOpen(true)}
+            title="Gestisci backup del database"
+          >
+            📦 Backup
+          </button>
         </div>
       </header>
 
@@ -858,6 +918,16 @@ function App() {
           <span>{annotations.length} annotazioni</span>
         </div>
       </footer>
+
+      {/* Backup Dialog */}
+      {backupDialogOpen && currentDocument && currentDbPath && (
+        <BackupDialog
+          documentId={currentDocument.id}
+          currentDbPath={currentDbPath}
+          onClose={() => setBackupDialogOpen(false)}
+          onRestoreSuccess={handleBackupRestoreSuccess}
+        />
+      )}
     </div>
   );
 }

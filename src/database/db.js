@@ -6,13 +6,15 @@ class DatabaseManager {
   constructor() {
     this.initialized = false;
     this.bookId = null;
+    this.documentId = null;
   }
 
-  async init(pdfDirectory, bookId) {
+  async init(pdfDirectory, bookId, documentId = null) {
     this.bookId = bookId;
+    this.documentId = documentId;
 
     try {
-      const result = await window.electronAPI.dbInit(pdfDirectory, bookId);
+      const result = await window.electronAPI.dbInit(pdfDirectory, bookId, documentId);
       if (result.success) {
         this.initialized = true;
         console.log('[DB] Database SQLite inizializzato:', result.path);
