@@ -20,23 +20,34 @@ function MindMapImageNode({ id, data, selected }) {
   const startPosRef = useRef({ x: 0, y: 0 });
   const startDimRef = useRef({ width: 0, height: 0 });
   const resizeCornerRef = useRef(null);
+  const dimensionsRef = useRef(dimensions);
 
   // Sincronizza dimensioni con data quando cambiano esternamente
   useEffect(() => {
-    if (data.width && data.height) {
+    if (data.width && data.height && !isResizing) {
       setDimensions({ width: data.width, height: data.height });
     }
-  }, [data.width, data.height]);
+  }, [data.width, data.height, isResizing]);
+
+  // Mantieni ref aggiornato
+  useEffect(() => {
+    dimensionsRef.current = dimensions;
+  }, [dimensions]);
 
   const handleResizeStart = useCallback((e, corner) => {
+    // Previeni drag del nodo e pan della mappa
     e.preventDefault();
     e.stopPropagation();
+
     setIsResizing(true);
     startPosRef.current = { x: e.clientX, y: e.clientY };
-    startDimRef.current = { ...dimensions };
+    startDimRef.current = { ...dimensionsRef.current };
     resizeCornerRef.current = corner;
 
     const handleMouseMove = (moveEvent) => {
+      moveEvent.preventDefault();
+      moveEvent.stopPropagation();
+
       const deltaX = moveEvent.clientX - startPosRef.current.x;
       const deltaY = moveEvent.clientY - startPosRef.current.y;
 
@@ -59,34 +70,30 @@ function MindMapImageNode({ id, data, selected }) {
         }
       }
 
-      setDimensions({ width: newWidth, height: newHeight });
+      setDimensions({ width: Math.round(newWidth), height: Math.round(newHeight) });
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (upEvent) => {
+      upEvent.preventDefault();
+      upEvent.stopPropagation();
+
       setIsResizing(false);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
 
       // Notifica il parent delle nuove dimensioni
       if (data.onResize) {
-        data.onResize(id, dimensions);
+        data.onResize(id, dimensionsRef.current);
       }
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [dimensions, id, data]);
-
-  // Notifica resize al termine
-  useEffect(() => {
-    if (!isResizing && data.onResize) {
-      data.onResize(id, dimensions);
-    }
-  }, [isResizing]);
+  }, [id, data]);
 
   return (
     <div
-      className={`mindmap-image-node ${selected ? 'selected' : ''}`}
+      className={`mindmap-image-node ${selected ? 'selected' : ''} ${isResizing ? 'resizing' : ''}`}
       style={{
         width: dimensions.width,
         height: dimensions.height,
@@ -128,19 +135,19 @@ function MindMapImageNode({ id, data, selected }) {
       {selected && (
         <>
           <div
-            className="mindmap-image-resize-handle nw"
+            className="mindmap-image-resize-handle nw nodrag nopan"
             onMouseDown={(e) => handleResizeStart(e, 'nw')}
           />
           <div
-            className="mindmap-image-resize-handle ne"
+            className="mindmap-image-resize-handle ne nodrag nopan"
             onMouseDown={(e) => handleResizeStart(e, 'ne')}
           />
           <div
-            className="mindmap-image-resize-handle sw"
+            className="mindmap-image-resize-handle sw nodrag nopan"
             onMouseDown={(e) => handleResizeStart(e, 'sw')}
           />
           <div
-            className="mindmap-image-resize-handle se"
+            className="mindmap-image-resize-handle se nodrag nopan"
             onMouseDown={(e) => handleResizeStart(e, 'se')}
           />
         </>
