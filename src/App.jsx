@@ -519,12 +519,30 @@ function App() {
       const annotation = annotations.find(a => a.id === annotationId);
 
       if (annotation?.type === 'note' && annotation.noteId) {
+        // Ottieni la nota per eliminare le immagini
+        const note = await db.getNote(annotation.noteId);
+
+        // Rimuovi il blocco dall'editor
         if (notesEditorRef.current?.removePdfNoteBlock) {
           notesEditorRef.current.removePdfNoteBlock(annotation.noteId);
         }
+
+        // Elimina immagini associate
+        if (note?.content && window.electronAPI) {
+          const imageUrls = extractLocalImageUrls(note.content);
+          if (imageUrls.length > 0) {
+            await window.electronAPI.deleteImagesFromDisk(imageUrls);
+          }
+        }
+
+        // Elimina la nota dal database
+        await db.deleteNote(annotation.noteId);
       }
 
+      // Elimina l'annotation dal database
       await db.deleteAnnotation(annotationId);
+
+      // Aggiorna state locale
       setAnnotations(prev => prev.filter(a => a.id !== annotationId));
     } catch (error) {
       console.error('Error deleting annotation:', error);
@@ -563,6 +581,7 @@ function App() {
     if (!db) return;
 
     try {
+      // Elimina immagini associate
       if (noteContent && window.electronAPI) {
         const imageUrls = extractLocalImageUrls(noteContent);
         if (imageUrls.length > 0) {
@@ -570,7 +589,15 @@ function App() {
         }
       }
 
+      // Elimina nota dal database
       await db.deleteNote(noteId);
+
+      // Elimina anche l'annotation associata dal database
+      if (annotationId) {
+        await db.deleteAnnotation(annotationId);
+      }
+
+      // Aggiorna state locale
       setAnnotations(prev => prev.filter(a => a.id !== annotationId));
     } catch (error) {
       console.error('Error deleting note:', error);

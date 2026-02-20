@@ -3,6 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import ContextMenu from './ContextMenu';
 import { getSelectionRects, denormalizeRect, getGutterYPosition, findAnnotationAtPoint } from '../utils/coordinates';
 import { getEmojiForIcon, ANNOTATION_OPACITY } from '../constants/annotations';
+import { darkenColor, hexToRgba } from '../utils/colorUtils';
 
 // Configurazione Worker - bundled localmente per supporto offline
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -520,14 +521,19 @@ const PDFViewer = forwardRef(function PDFViewer({
       };
 
       if (annotation.type === 'highlight') {
-        // Evidenziatura pura - solo sfondo colorato
+        // Evidenziatura pura - solo sfondo colorato, nessun bordo
         style.backgroundColor = annotation.color;
         style.opacity = annotation.opacity || ANNOTATION_OPACITY.highlight;
       } else {
-        // Note, flashcard, dictionary, keyword - bordo + sfondo leggero
-        style.border = `2px solid ${annotation.color}`;
-        style.backgroundColor = annotation.color;
-        style.opacity = annotation.opacity || ANNOTATION_OPACITY.note;
+        // Note, flashcard, dictionary, keyword - bordo colorato scuro + sfondo leggero
+        // Bordo: colore scurito del 25%, completamente opaco (visibile ma non troppo scuro)
+        // Sfondo: colore originale con opacity 0.15 tramite rgba
+        const darkerBorderColor = darkenColor(annotation.color, 25);
+        const bgOpacity = annotation.opacity || ANNOTATION_OPACITY.note;
+
+        style.border = `2px solid ${darkerBorderColor}`;
+        style.backgroundColor = hexToRgba(annotation.color, bgOpacity);
+        // NON impostare opacity sul div, altrimenti rende trasparente anche il bordo
       }
 
       // Aggiungi classe flashing se questa annotazione sta lampeggiando
