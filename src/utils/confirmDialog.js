@@ -214,6 +214,18 @@ export function showDeleteKeywordDialog() {
 }
 
 /**
+ * Dialog specifico per eliminazione segnalibro
+ */
+export function showDeleteBookmarkDialog(bookmarkTitle) {
+  return showConfirmDialog({
+    title: '🗑️ Elimina segnalibro',
+    message: `Sei sicuro di voler eliminare il segnalibro "<b>${bookmarkTitle}</b>"?`,
+    confirmText: 'Elimina',
+    confirmColor: '#3b82f6'
+  });
+}
+
+/**
  * Utility per scurire/schiarire un colore
  */
 function adjustBrightness(hex, percent) {

@@ -1,11 +1,11 @@
 import { useEffect, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Highlight from '@tiptap/extension-highlight';
 import Underline from '@tiptap/extension-underline';
 import { DictionaryBlock } from '../extensions/DictionaryBlock';
+import { ImageWithDelete } from '../extensions/ImageWithDelete';
 import { getDatabase } from '../database/db';
 import { useEditorContext } from '../contexts/EditorContext';
 
@@ -14,11 +14,21 @@ const DictionaryEditor = forwardRef(function DictionaryEditor({ bookId, pdfDir, 
   // Context per gestire l'editor attivo (principale o MiniEditor)
   const { registerMainEditor, activeEditor, activeMiniEditorId } = useEditorContext();
 
+  // Handler per eliminare immagine da disco
+  const handleDeleteImage = useCallback(async (imageUrl) => {
+    if (window.electronAPI) {
+      await window.electronAPI.deleteImageFromDisk(imageUrl);
+      console.log('🗑️ Image deleted from editor:', imageUrl);
+    }
+  }, []);
+
   // Editor principale
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Image,
+      ImageWithDelete.configure({
+        onDeleteImage: handleDeleteImage,
+      }),
       Link.configure({
         openOnClick: false,
       }),
