@@ -520,7 +520,7 @@ function App() {
 
       if (annotation?.type === 'note' && annotation.noteId) {
         // Ottieni la nota per eliminare le immagini
-        const note = await db.getNote(annotation.noteId);
+        const note = await db.getNoteById(annotation.noteId);
 
         // Rimuovi il blocco dall'editor
         if (notesEditorRef.current?.removePdfNoteBlock) {
